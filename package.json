@@ -1,7 +1,7 @@
 {
 "name": "visual-craft-backend-pro",
-"version": "1.0.0",
-"description": "Visual Craft Photography – backend API (Render-ready)",
+"version": "1.1.0",
+"description": "Visual Craft Photography – backend API (Render-ready, Calendar-enabled)",
 "main": "server.js",
 "type": "module",
 "scripts": {
@@ -17,6 +17,6 @@
 "ics": "^3.8.1",
 "nanoid": "^5.0.7",
 "nodemailer": "^6.9.8",
+"sqlite": "^5.1.6",
 "sqlite3": "^5.1.6"
-}
 }
