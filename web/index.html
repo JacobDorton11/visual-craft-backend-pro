@@ -14,14 +14,22 @@
       .splash-bg{min-height:100vh;background-image:url('/public/images/splash-bg.jpg');background-size:cover;background-position:center;position:relative}
       .center-card{position:absolute;top:44%;left:50%;transform:translate(-50%,-50%);width:min(92vw,700px);padding:8px}
       .diag{font:14px/1.4 Georgia,serif;background:#f7f7f7;border-bottom:1px solid #e5e5e5;padding:10px 12px;color:#333}
-      .diag b{display:inline-block;min-width:140px}
-      .ok{color:#0a0}.bad{color:#a00}
+      .ok{color:#090}.bad{color:#900}
+      .a-card{background:rgba(255,255,255,.55);border:2px solid rgba(255,255,255,.2);border-radius:20px;box-shadow:0 10px 30px rgba(0,0,0,.12);padding:24px}
+      .btn{border:none;border-radius:12px;padding:14px 22px;min-height:48px;font-size:16px;cursor:pointer}
+      .btn-dark{background:#1a1a1a;color:#fff}
+      .btn-mid{background:#4d4d4d;color:#fff}
+      .btn-ghost{background:transparent;color:#1a1a1a;border:2px solid #1a1a1a}
+      .grid{display:grid;gap:12px}
+      .nav{display:flex;gap:12px;align-items:center;padding:12px 16px;border-bottom:1px solid #eee;position:sticky;top:0;background:#fff;z-index:10}
+      .container{max-width:900px;margin:0 auto;padding:16px 16px 24px}
+      .tile{display:flex;align-items:center;gap:12px;text-align:left;padding:12px;border-radius:12px;border:1px solid #e5e5e5;background:#fff}
+      .tile img{width:72px;height:48px;object-fit:cover;border-radius:8px;border:1px solid #eee}
     </style>
 
-    <!-- UMD libs (most robust) -->
+    <!-- Only React + ReactDOM (Router removed) -->
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <script crossorigin src="https://unpkg.com/react-router-dom@6/umd/react-router-dom.production.min.js"></script>
   </head>
   <body>
     <div class="diag" id="diag">Diagnostics loading…</div>
@@ -40,23 +48,34 @@
     </script>
 
     <script>
-      // ======== App (cleaned; no stray parentheses) ========
+      // ====== Tiny built-in hash router (no external library) ======
       const React = window.React;
       const ReactDOM = window.ReactDOM;
-      const { HashRouter, Routes, Route, Link, useNavigate } = window.ReactRouterDOM;
       const API = window.__API_BASE__ ?? "";
 
+      function useHashRoute(){
+        const [route,setRoute] = React.useState(()=>location.hash.replace(/^#/, '') || '/');
+        React.useEffect(()=>{
+          const onHash = ()=>setRoute(location.hash.replace(/^#/, '') || '/');
+          window.addEventListener('hashchange', onHash);
+          return ()=>window.removeEventListener('hashchange', onHash);
+        },[]);
+        return [route, (to)=>{ location.hash = to; }];
+      }
+
+      // ---- UI helpers
       function Card(p){ return React.createElement('div',{className:'a-card',style:p.style},p.children); }
       function Button({variant='dark',style,onClick,children}){
         const cls = variant==='dark'?'btn btn-dark':variant==='mid'?'btn btn-mid':'btn btn-ghost';
         return React.createElement('button',{className:cls,style,onClick},children);
       }
+      function Link({to,children,style}){ return React.createElement('a',{href:'#'+to,style},children); }
       function NavBar(){
         return React.createElement('div',{className:'nav'},
-          React.createElement(Link,{to:'/'},React.createElement('strong',null,'Visual Craft')),
+          Link({to:'/', children:React.createElement('strong',null,'Visual Craft')}),
           React.createElement('div',{style:{marginLeft:'auto',display:'flex',gap:'12px'}},
-            React.createElement(Link,{to:'/book'},'Book'),
-            React.createElement(Link,{to:'/download'},'Download')
+            Link({to:'/book', children:'Book'}),
+            Link({to:'/download', children:'Download'})
           )
         );
       }
@@ -98,13 +117,11 @@
               React.createElement('h1',null,'Visual Craft Photography'),
               React.createElement('p',null,'Sign in or create an account'),
               React.createElement('div',{className:'grid'},
-                React.createElement(Button,{variant:'dark'},'Log in'),
-                React.createElement(Button,{variant:'mid'},'Create account')
+                Button({variant:'dark', children:'Log in'}),
+                Button({variant:'mid', children:'Create account'})
               ),
-              React.createElement('div',{className:'pill-share'},
-                React.createElement('div',null,
-                  React.createElement('a',{href:'#/download',style:{color:'#111',textDecoration:'none'}},'Share')
-                )
+              React.createElement('div',{style:{marginTop:'8px',textAlign:'center'}},
+                Link({to:'/download', children:'Share'})
               )
             )
           )
@@ -112,7 +129,6 @@
       }
 
       function BookingFlow(){
-        const nav = useNavigate();
         const [step,setStep] = React.useState(0);
         const [form,setForm] = React.useState({ listingType:null, pkg:null, place:null, slot:null });
         const [query,setQuery] = React.useState('');
@@ -123,9 +139,7 @@
         const [results,setResults] = React.useState(mockPlaces);
 
         React.useEffect(()=>{
-          if (!(window.google?.maps?.places)){
-            setResults(mockPlaces.filter(p => p.label.toLowerCase().includes(query.toLowerCase())));
-          }
+          setResults(mockPlaces.filter(p => p.label.toLowerCase().includes(query.toLowerCase())));
         },[query,mockPlaces]);
 
         const [slots,setSlots] = React.useState({ list:[], duration:60 });
@@ -179,7 +193,7 @@
           return Section({
             title:'Property Address',
             children:React.createElement('div',{className:'grid',style:{gap:'16px'}},
-              React.createElement('input',{id:'addr-input',placeholder:'Search address…',value:query,onChange:e=>setQuery(e.target.value),
+              React.createElement('input',{placeholder:'Search address…',value:query,onChange:e=>setQuery(e.target.value),
                 style:{padding:'14px',borderRadius:'12px',border:'1px solid #e5e5e5'}}),
               React.createElement('div',{className:'grid'},items)
             )
@@ -212,7 +226,7 @@
               React.createElement('div',null,React.createElement('strong',null,'Address: '),form.place?.label||''),
               React.createElement('div',null,React.createElement('strong',null,'Date & Time: '),new Date(form.slot?.startISO||Date.now()).toLocaleString()),
               React.createElement('div',{style:{display:'flex',gap:'12px',marginTop:'8px'}},
-                React.createElement(Button,{variant:'dark',onClick:async()=>{
+                Button({variant:'dark',onClick:async()=>{
                   const r = await fetch(API + '/api/book',{
                     method:'POST',headers:{'Content-Type':'application/json'},
                     body: JSON.stringify({
@@ -222,10 +236,10 @@
                     })
                   });
                   const j = await r.json();
-                  if (j.ok && j.code) window.location.hash = '#/confirm/' + j.code;
+                  if (j.ok && j.code) location.hash = '/confirm/' + j.code;
                   else alert('Booking failed');
                 }},'Confirm Appointment'),
-                React.createElement(Button,{variant:'mid',onClick:()=>setStep(3)},'Back')
+                Button({variant:'mid',onClick:()=>setStep(3)},'Back')
               )
             )
           });
@@ -235,7 +249,7 @@
           step===0 ? TypeStep() :
           step===1 ? PackageStep() :
           step===2 ? AddressStep() :
-          step===3 ? TimeStep() : ReviewStep();
+          step===3 ? TimeStep()   : ReviewStep();
 
         return React.createElement('div',{style:{paddingBottom:'32px'}},
           React.createElement(Stepper,{current:step}),
@@ -244,16 +258,16 @@
       }
 
       function ConfirmPage(){
-        const code = window.location.hash.split('/').pop() || '';
+        const code = (location.hash.split('/').pop()||'').replace(/^#+/,'');
         return Section({title:'Appointment Confirmed',children:
-          React.createElement('div',{className:'center'},
+          React.createElement('div',{style:{textAlign:'center'}},
             React.createElement('div',{style:{fontSize:'28px',marginBottom:'8px'}},'Confirmation #'),
             React.createElement('div',{style:{fontSize:'22px',marginBottom:'16px'}},code),
             React.createElement('div',{style:{color:'#4d4d4d',margin:'0 auto 16px',maxWidth:'560px',lineHeight:1.35}},
               'A confirmation email with an .ics invite will be sent. It includes a one-tap Reschedule link.'),
             React.createElement('div',{style:{display:'flex',justifyContent:'center',gap:'12px',flexWrap:'wrap',maxWidth:'560px',margin:'0 auto'}},
-              React.createElement(Button,{variant:'mid',style:{minWidth:'260px'}},'Add to Calendar (ICS)'),
-              React.createElement(Button,{variant:'dark',style:{minWidth:'260px'}},'Manage Booking')
+              Button({variant:'mid',style:{minWidth:'260px'}},'Add to Calendar (ICS)'),
+              Button({variant:'dark',style:{minWidth:'260px'}},'Manage Booking')
             )
           )
         });
@@ -268,33 +282,37 @@
               React.createElement('img',{alt:'Icon 192',src:'/public/icons/icon-192.png',style:{width:'64px',height:'64px',borderRadius:'14px',border:'1px solid #e5e5e5'}}),
               React.createElement('img',{alt:'Icon 512',src:'/public/icons/icon-512.png',style:{width:'72px',height:'72px',borderRadius:'16px',border:'1px solid #e5e5e5'}})
             ),
-            React.createElement('div',null,React.createElement('a',{href:'#/'},'Back to login'))
+            Link({to:'/', children:'Back to login'})
           )
         });
       }
 
+      // -------- App shell with tiny router --------
       function App(){
-        return React.createElement(HashRouter,null,
-          React.createElement(NavBar,null),
-          React.createElement(Routes,null,
-            React.createElement(Route,{path:'/',             element:React.createElement(Splash)}),
-            React.createElement(Route,{path:'/book',         element:React.createElement(BookingFlow)}),
-            React.createElement(Route,{path:'/confirm/:code',element:React.createElement(ConfirmPage)}),
-            React.createElement(Route,{path:'/download',     element:React.createElement(DownloadPage)})
-          )
+        const [route, go] = useHashRoute();  // '/', '/book', '/confirm/<code>', '/download'
+        function Nav(){ return React.createElement(NavBar); }
+
+        let screen;
+        if (route === '/' || route === '')       screen = React.createElement(Splash);
+        else if (route.startsWith('/book'))      screen = React.createElement(BookingFlow);
+        else if (route.startsWith('/confirm/'))  screen = React.createElement(ConfirmPage);
+        else if (route.startsWith('/download'))  screen = React.createElement(DownloadPage);
+        else                                     screen = Section({title:'Not found',children:React.createElement('div',null,'Page not found')});
+
+        return React.createElement(React.Fragment,null,
+          React.createElement(Nav),
+          screen
         );
       }
 
-      // Diagnostics
-      const diag = document.getElementById('diag');
-      diag.innerHTML =
-        `<b>React:</b> ${window.React?' <span class="ok">OK</span>':'<span class="bad">MISSING</span>'} &nbsp;`+
-        `<b>ReactDOM:</b> ${window.ReactDOM?' <span class="ok">OK</span>':'<span class="bad">MISSING</span>'} &nbsp;`+
-        `<b>Router:</b> ${window.ReactRouterDOM?' <span class="ok">OK</span>':'<span class="bad">MISSING</span>'} &nbsp;`+
+      // Diagnostics (now Router is "built-in")
+      document.getElementById('diag').innerHTML =
+        `<b>React:</b> ${window.React?'<span class="ok">OK</span>':'<span class="bad">MISSING</span>'} &nbsp;`+
+        `<b>ReactDOM:</b> ${window.ReactDOM?'<span class="ok">OK</span>':'<span class="bad">MISSING</span>'} &nbsp;`+
+        `<b>Router:</b> <span class="ok">Built-in</span> &nbsp;`+
         `<b>Image:</b> <a href="/public/images/splash-bg.jpg" target="_blank">open</a> &nbsp;`+
         `<b>Health:</b> <a href="/api/health" target="_blank">check</a>`;
 
-      // Mount
       ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App));
     </script>
 
