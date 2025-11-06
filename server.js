@@ -1,4 +1,8 @@
 // ==== Visual Craft Backend (ESM, Node 20) =====================================
+import path from 'path';
+import { fileURLToPath } from 'url';
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 import express from 'express';
 import cors from 'cors';
 import nodemailer from 'nodemailer';
@@ -308,6 +312,18 @@ app.post('/api/cancel', async (req, res) => {
     if (!code) return res.status(400).json({ error: 'missing-fields' });
     const b = await db.get('SELECT * FROM bookings WHERE code = ?', code);
     if (!b) return res.status(404).json({ error: 'not-found' });
+    // --- STATIC SPA HOSTING ---
+import express from 'express'; // keep if not already imported at top
+
+// Serve the compiled SPA from /web
+app.use(express.static(path.join(__dirname, 'web'), { index: false }));
+
+// SPA fallback: send index.html for any non-API route
+app.get('*', (req, res, next) => {
+  if (req.path.startsWith('/api/')) return next();
+  res.sendFile(path.join(__dirname, 'web', 'index.html'));
+});
+
 
     await db.run('UPDATE bookings SET status = ? WHERE code = ?', 'canceled', code);
 
