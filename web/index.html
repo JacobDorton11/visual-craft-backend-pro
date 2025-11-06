@@ -17,19 +17,25 @@
       }
       .center-card{ position:absolute; top:44%; left:50%; transform:translate(-50%,-50%); width:min(92vw,700px); padding:8px; }
     </style>
+
+    <!-- React / ReactDOM / React Router (UMD builds = super reliable) -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-router-dom@6/umd/react-router-dom.production.min.js"></script>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <!-- Tiny fallback so you see *something* even if JS fails -->
+      <div style="padding:16px;font-family:Georgia,serif;color:#666">Loading Visual Craft…</div>
+    </div>
 
     <!-- Same-origin API base: empty means fetch('/api/...') -->
     <script>window.__API_BASE__ = "";</script>
 
-    <script type="module" src="/app.js"></script>
+    <!-- Your app code (non-module script, uses UMD globals) -->
+    <script src="/app.js"></script>
 
-    <!-- OPTIONAL: Google Maps Places Autocomplete.
-         1) Enable Maps JavaScript API + Places API in Google Cloud.
-         2) Replace YOUR_KEY_HERE and UNCOMMENT the script tag below.
-         3) Restrict the key to your Render domain (HTTP referrer).
+    <!-- OPTIONAL: Google Maps Places Autocomplete
     <script src="https://maps.googleapis.com/maps/api/js?key=YOUR_KEY_HERE&libraries=places&callback=initPlaces" async defer></script>
     -->
 
