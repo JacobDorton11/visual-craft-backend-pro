@@ -1,8 +1,9 @@
-import React from 'https://esm.sh/react@18.3.1';
-import ReactDOM from 'https://esm.sh/react-dom@18.3.1/client';
-import { HashRouter, Routes, Route, Link, useNavigate } from 'https://esm.sh/react-router-dom@6.26.2';
+// app.js — UMD globals
+const React = window.React;
+const ReactDOM = window.ReactDOM;
+const { HashRouter, Routes, Route, Link, useNavigate } = window.ReactRouterDOM;
 
-const API = window.__API_BASE__ ?? ""; // empty => same-origin (your Render service)
+const API = window.__API_BASE__ ?? "";
 
 function Card(props){ return React.createElement('div', { className:'a-card', style:props.style }, props.children); }
 function Button({variant='dark', style, onClick, children}){
@@ -52,7 +53,7 @@ function Stepper({current}){
 function Splash(){
   return React.createElement('div',{className:'splash-bg'},
     React.createElement('div',{className:'center-card'},
-      React.createElement(Card,{className:'splash-card'},
+      React.createElement(Card,null,
         React.createElement('h1',null,'Visual Craft Photography'),
         React.createElement('p',null,'Sign in or create an account'),
         React.createElement('div',{className:'grid'},
@@ -79,7 +80,7 @@ function BookingFlow(){
   ],[]);
   const [results,setResults] = React.useState(mockPlaces);
 
-  // Optional Google Places (activated when you uncomment script in index.html)
+  // Optional Google Places: works when Maps script is uncommented in index.html
   React.useEffect(()=>{
     function initPlaces(){
       const input = document.getElementById('addr-input');
@@ -100,7 +101,6 @@ function BookingFlow(){
   },[]);
 
   React.useEffect(()=>{
-    // Fallback filter when Places script is not loaded
     if (!(window.google?.maps?.places)){
       setResults(mockPlaces.filter(p => p.label.toLowerCase().includes(query.toLowerCase())));
     }
