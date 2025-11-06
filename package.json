@@ -1,6 +1,6 @@
 {
 "name": "visual-craft-backend-pro",
-"version": "1.2.0",
+"version": "1.2.2",
 "description": "Visual Craft Photography – backend API (Render-ready, Calendar events create/update/delete)",
 "main": "server.js",
 "type": "module",
