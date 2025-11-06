@@ -1,0 +1,101 @@
+visual-craft-spa-pro/
+<div><strong>App Icon:</strong> Uses placeholder icons in /public/icons/. Replace with your Concept C artwork when ready.</div>
+<div style={{ display:'flex', gap:12, alignItems:'center', flexWrap:'wrap' }}>
+<img alt="Icon 192" src="/public/icons/icon-192.png" style={{ width:64, height:64, borderRadius:14, border:'1px solid #e5e5e5' }} />
+<img alt="Icon 512" src="/public/icons/icon-512.png" style={{ width:72, height:72, borderRadius:16, border:'1px solid #e5e5e5' }} />
+</div>
+<div><Link to="/">Back to login</Link></div>
+</div>
+</Section>
+);
+}
+
+
+function AdminIndex(){
+return (
+<Section title="Admin">
+<div style={{ display:'flex', gap:12, flexWrap:'wrap' }}>
+<Link to="/admin/today"><Button variant="dark">Day Routing Preview</Button></Link>
+<Link to="/admin/settings"><Button variant="ghost">Settings</Button></Link>
+</div>
+</Section>
+);
+}
+function AdminDashboard(){
+const jobs = [
+{ id:1, at:'09:00', address:'4718 Lake Park Dr. Unit #2 Johnson City, TN 37615', pkg:'Silver' },
+{ id:2, at:'12:00', address:'123 Main St, Asheville, NC', pkg:'Gold' }
+];
+return (
+<Section title="Today • Route Preview">
+<ol style={{ margin:0, paddingLeft:20 }}>
+{jobs.map((j,i)=> (
+<li key={j.id} style={{ margin:'12px 0' }}>
+<strong style={{ marginRight:8 }}>{j.at}</strong>
+<span>{j.pkg} — {j.address}</span>
+{i < jobs.length - 1 && <span style={{ color:'#4d4d4d' }}> • Next leg: ~15–25 min</span>}
+<div style={{ marginTop:6 }}>
+<Button variant="ghost" onClick={()=>window.open(`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(j.address)}`,'_blank')}>Open in Maps</Button>
+</div>
+</li>
+))}
+</ol>
+</Section>
+);
+}
+function SettingsIndex(){
+return (
+<Section title="Settings (Owner/Admin)">
+<div style={{ display:'grid', gap:12 }}>
+<div>• Business Hours • Location & Travel • Holds & Blackouts • Calendar Integration • Team & Roles • Email (SPF/DKIM/DMARC)</div>
+<div style={{ color:'#4d4d4d' }}>Hidden from clients; backend also enforces RBAC.</div>
+</div>
+</Section>
+);
+}
+
+
+export default function Root(){
+return (
+<div>
+<BrowserRouter>
+<AuthProvider>
+<NavBar />
+<Routes>
+<Route path="/" element={<SplashLogin />} />
+<Route path="/book" element={<BookingFlow />} />
+<Route path="/confirm/:code" element={<ConfirmPage />} />
+<Route path="/download" element={<DownloadPage />} />
+<Route path="/admin" element={<RequireRole anyOf={['owner','admin']}><AdminIndex /></RequireRole>} />
+<Route path="/admin/today" element={<RequireRole anyOf={['owner','admin']}><AdminDashboard /></RequireRole>} />
+<Route path="/admin/settings" element={<RequireRole anyOf={['owner','admin']}><SettingsIndex /></RequireRole>} />
+</Routes>
+</AuthProvider>
+</BrowserRouter>
+</div>
+);
+}
+
+
+
+
+// ===================== README.md =====================
+# Visual Craft SPA (PWA)
+
+
+## Local dev
+```
+npm install
+npm run dev
+```
+Visit http://localhost:5173
+
+
+## Build & deploy (Netlify)
+- Set env var `VITE_API_BASE` to your Render API URL.
+- Build: `npm run build`
+- Deploy `dist/` to Netlify (or connect the repo for auto deploys).
+
+
+## PWA install
+Includes `manifest.json` and a tiny `sw.js`. On iOS: Share → Add to Home Screen. On Android/Chrome: ⋮ → Install App.
