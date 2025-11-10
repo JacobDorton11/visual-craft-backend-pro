@@ -14,7 +14,7 @@
     :root { --splash-url: url('/images/splash-bg.jpg'); }
     html, body, #root { height: 100%; margin: 0; }
     body { font-family: Georgia, Times, serif; color:#111; background:#fff; }
-    .diag { position: fixed; top: 6px; left: 6px; font: 12px/1.4 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif; color:#222; z-index: 9999; background: rgba(255,255,255,0.9); padding: 4px 8px; border-radius: 6px; border: 1px solid #ddd; }
+    .diag { position: fixed; top: 6px; left: 6px; font: 12px/1.4 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif; color:#222; z-index: 9999; background: rgba(255,255,255,0.9); padding: 4px 8px; border-radius: 6px; border: 1px solid #ddd; display:none }
     .err  { position: fixed; bottom: 8px; left: 8px; right: 8px; max-height: 40vh; overflow:auto; background:#fff5f5; color:#8a0000; border:1px solid #ffcccc; border-radius:8px; padding:8px 10px; z-index: 9999; font: 12px/1.35 ui-monospace, Menlo, Consolas, monospace; display:none; white-space:pre-wrap }
     .card { background: rgba(255,255,255,0.55); border: 2px solid rgba(255,255,255,0.2); border-radius: 20px; padding: 24px; box-shadow: 0 10px 30px rgba(0,0,0,0.12); }
     .btn { display:inline-block; border:none; border-radius:12px; padding:14px 22px; min-height:48px; font-size:16px; cursor:pointer }
@@ -22,7 +22,7 @@
     .btn-mid  { background:#4d4d4d; color:#fff }
     .btn-ghost{ background:transparent; color:#1a1a1a; border:2px solid #1a1a1a }
     .pill { position:fixed; bottom:16px; left:50%; transform:translateX(-50%); background:rgba(255,255,255,0.55); padding:10px 18px; border-radius:12px; border:2px solid rgba(255,255,255,0.25); font-size:14px; color:#1a1a1a; text-decoration:none }
-    a { color: inherit; }
+    a { color: inherit; text-decoration:none }
     .tile { position: relative; overflow: hidden; border-radius: 14px; border:1px solid #e5e5e5; background:#fff; padding:0; min-height: 170px; cursor: pointer; }
     .tile img { width: 100%; height: 170px; object-fit: cover; display:block; }
     .tile .label { position:absolute; left:10px; bottom:10px; background:rgba(0,0,0,0.55); color:#fff; padding:6px 10px; border-radius:10px; font-size:14px; }
@@ -31,17 +31,17 @@
     .row { display:flex; gap:12px; flex-wrap:wrap; }
   </style>
 
-  <!-- React + ReactDOM (UMD) -->
+  <!-- React (UMD) -->
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 </head>
 <body>
-  <div class="diag" id="diag" style="display:none">Diagnostics…</div>
+  <div class="diag" id="diag"></div>
   <div id="root"></div>
   <div class="err" id="err"></div>
 
   <script>
-    // ===== Global error catcher shown on the page =====
+    /* -------- Global error catcher (never remove) -------- */
     (function(){
       const box = document.getElementById('err');
       function showErr(prefix, msg, stack) {
@@ -52,12 +52,12 @@
         showErr('JS Error', e.message, e.error && e.error.stack);
       });
       window.addEventListener('unhandledrejection', (e) => {
-        const reason = e.reason || {};
-        showErr('Promise Rejection', reason.message || String(reason), reason.stack);
+        const r = e.reason || {};
+        showErr('Promise Rejection', r.message || String(r), r.stack);
       });
     })();
 
-    // ===== Diagnostics banner (enable with ?debug=1) =====
+    /* -------- Diagnostics banner (enable with ?debug=1) -------- */
     (function(){
       if (!location.search.includes('debug=1')) return;
       const diag = document.getElementById('diag');
@@ -65,13 +65,12 @@
       const hasReact = !!window.React; const hasDom = !!window.ReactDOM;
       const hasRouter = true;
       const img = new Image();
-      img.onload = () => diag.textContent = `React: ${ok(hasReact)} ReactDOM: ${ok(hasDom)} Router: ${ok(hasRouter)} Image: OK`;
-      img.onerror = () => diag.textContent = `React: ${ok(hasReact)} ReactDOM: ${ok(hasDom)} Router: ${ok(hasRouter)} Image: MISSING`;
+      img.onload = () => { diag.textContent = `React: ${ok(hasReact)} ReactDOM: ${ok(hasDom)} Router: ${ok(hasRouter)} Image: OK`; diag.style.display='block'; };
+      img.onerror = () => { diag.textContent = `React: ${ok(hasReact)} ReactDOM: ${ok(hasDom)} Router: ${ok(hasRouter)} Image: MISSING`; diag.style.display='block'; };
       img.src = '/images/splash-bg.jpg';
-      diag.style.display = 'block';
     })();
 
-    // ===== tiny Hash Router =====
+    /* ---------------- Tiny hash router ---------------- */
     const RouterContext = React.createContext(null);
     const parseHash = () => (location.hash ? location.hash.slice(1) : '/') || '/';
     const makeMatcher = (pattern) => {
@@ -91,15 +90,13 @@
     const useNav = ()=> React.useContext(RouterContext).navigate;
     const useLoc = ()=> React.useContext(RouterContext);
 
-    // ===== Auth (localStorage/sessionStorage) =====
+    /* ---------------- Auth (local/session storage) ---------------- */
     const AuthCtx = React.createContext(null);
     const STORAGE = { USER:'vc_user', EMAIL_REMEMBER:'vc_email_remember', PROFILE:'vc_profile' };
     const readAnyUser = () => {
-      try {
-        const a = localStorage.getItem(STORAGE.USER); if (a) return JSON.parse(a);
-        const b = sessionStorage.getItem(STORAGE.USER); if (b) return JSON.parse(b);
-        return null;
-      } catch { return null; }
+      try { const a=localStorage.getItem(STORAGE.USER); if(a) return JSON.parse(a);
+            const b=sessionStorage.getItem(STORAGE.USER); if(b) return JSON.parse(b);
+            return null; } catch { return null; }
     };
     function AuthProvider({children}) {
       const [user, setUser] = React.useState(readAnyUser);
@@ -125,7 +122,7 @@
     }
     const useAuth = ()=> React.useContext(AuthCtx);
 
-    // ===== UI atoms =====
+    /* ---------------- UI atoms ---------------- */
     const Button = ({children, onClick, variant="dark", style, type}) =>
       React.createElement('button',{onClick, className:`btn ${variant==="dark"?"btn-dark":variant==="mid"?"btn-mid":"btn-ghost"}`, style, type}, children);
     const Card = ({style, children}) => React.createElement('div',{className:'card', style}, children);
@@ -136,7 +133,7 @@
         React.createElement(Card,{style:{background:'#fff', border:'1px solid #e5e5e5'}}, children)
       );
 
-    // ===== NavBar =====
+    /* ---------------- NavBar ---------------- */
     function NavBar(){
       const { user, logout, hasRole, readProfile } = useAuth();
       const prof = readProfile?.() || null;
@@ -153,7 +150,7 @@
       );
     }
 
-    // ===== Pages =====
+    /* ---------------- Pages ---------------- */
     function Splash(){
       const nav = useNav();
       const { loginOwner, loginAdmin } = useAuth();
@@ -239,7 +236,6 @@
         "1 Page Ave, Asheville, NC",
         "4718 Lake Park Dr Unit #2, Johnson City, TN 37615"
       ];
-
       function TypeStep(){
         return React.createElement(Section,{title:'Choose a Listing Type'},
           React.createElement('div',{className:'row',style:{display:'grid',gap:12,gridTemplateColumns:'repeat(auto-fit,minmax(240px,1fr))'}},
@@ -270,7 +266,6 @@
         const [q,setQ] = React.useState(''); const [sugs,setSugs] = React.useState([]);
         React.useEffect(()=>{
           if (!q) { setSugs([]); return; }
-          // Fallback suggestions only (no external API).
           const low = q.toLowerCase(); setSugs(fallbackPlaces.filter(x=>x.toLowerCase().includes(low)).slice(0,5));
         },[q]);
         return React.createElement(Section,{title:'Property Address'},
@@ -392,7 +387,7 @@
       return children;
     }
 
-    // ===== Root app & routes =====
+    /* ---------------- Root app & routes ---------------- */
     function AppShell(){
       const { user } = useAuth();
       const { path } = useLoc();
@@ -415,8 +410,6 @@
       ].map(r=>({...r,matcher:makeMatcher(r.path)}));
       return React.createElement(Router,{routes});
     }
-
-    // Mount app
     ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App));
   </script>
 </body>
