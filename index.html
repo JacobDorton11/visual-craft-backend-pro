@@ -4,9 +4,13 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Visual Craft Photography</title>
+
+  <!-- PWA bits -->
   <meta name="theme-color" content="#000000" />
+  <link rel="manifest" href="/manifest.webmanifest" />
   <link rel="icon" href="/192.png" />
   <link rel="apple-touch-icon" href="/512.png" />
+
   <style>
     :root { --splash-url: url('/images/splash-bg.jpg'); }
     html, body, #root { height: 100%; margin: 0; }
@@ -19,212 +23,204 @@
     .btn-ghost{ background:transparent; color:#1a1a1a; border:2px solid #1a1a1a }
     .pill { position:fixed; bottom:16px; left:50%; transform:translateX(-50%); background:rgba(255,255,255,0.55); padding:10px 18px; border-radius:12px; border:2px solid rgba(255,255,255,0.25); font-size:14px; color:#1a1a1a; text-decoration:none }
     a { color: inherit; }
+    .tile { position: relative; overflow: hidden; border-radius: 14px; border:1px solid #e5e5e5; background:#fff; padding:0; min-height: 170px; cursor: pointer; }
+    .tile img { width: 100%; height: 170px; object-fit: cover; display:block; }
+    .tile .label { position:absolute; left:10px; bottom:10px; background:rgba(0,0,0,0.55); color:#fff; padding:6px 10px; border-radius:10px; font-size:14px; }
+    .field { padding: 14px; border-radius: 12px; border:1px solid #e5e5e5; width:100%; box-sizing: border-box; font-family: inherit; font-size:16px; }
+    .suggest { padding:10px 12px; border:1px solid #e5e5e5; border-radius:10px; background:#fff; text-align:left; }
+    .row { display:flex; gap:12px; flex-wrap:wrap; }
   </style>
-</head>
-<body>
-  <div class="diag" id="diag">Diagnostics loading…</div>
-  <div id="root"></div>
 
   <!-- React + ReactDOM (UMD) -->
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 
+  <!-- OPTIONAL: Real Google Places Autocomplete (fallback works without this) -->
+  <!-- Replace YOUR_GOOGLE_MAPS_KEY to enable real suggestions -->
+  <script async defer src="https://maps.googleapis.com/maps/api/js?key=YOUR_GOOGLE_MAPS_KEY&libraries=places"></script>
+</head>
+<body>
+  <!-- diagnostics: only shown when ?debug=1 -->
+  <div class="diag" id="diag" style="display:none">Diagnostics…</div>
+  <div id="root"></div>
+
   <script>
-    // --- diagnostics (keep visible while we test) ---
-    (function(){
-      const ok = (x) => x ? 'OK' : 'MISSING';
-      const hasReact = !!window.React;
-      const hasReactDOM = !!window.ReactDOM;
-      const hasRouter = true; // we'll provide our own router below
-      const imgPing = new Image();
-      imgPing.onload = () => document.getElementById('diag').textContent =
-        `React: ${ok(hasReact)} ReactDOM: ${ok(hasReactDOM)} Router: ${ok(hasRouter)} Image: OK`;
-      imgPing.onerror = () => document.getElementById('diag').textContent =
-        `React: ${ok(hasReact)} ReactDOM: ${ok(hasReactDOM)} Router: ${ok(hasRouter)} Image: MISSING`;
-      imgPing.src = '/images/splash-bg.jpg';
-    })();
+    // show diagnostics only with ?debug=1
+    if (location.search.includes('debug=1')) {
+      const diag = document.getElementById('diag');
+      const ok = x => x ? 'OK' : 'MISSING';
+      const hasReact = !!window.React; const hasDom = !!window.ReactDOM;
+      const hasRouter = true;
+      const img = new Image();
+      img.onload = () => diag.textContent = `React: ${ok(hasReact)} ReactDOM: ${ok(hasDom)} Router: ${ok(hasRouter)} Image: OK`;
+      img.onerror = () => diag.textContent = `React: ${ok(hasReact)} ReactDOM: ${ok(hasDom)} Router: ${ok(hasRouter)} Image: MISSING`;
+      img.src = '/images/splash-bg.jpg';
+      diag.style.display = 'block';
+    }
   </script>
 
   <script>
-    // =========================================================
-    // Minimal Hash Router (no external dependency)
-    // =========================================================
+    // ===== tiny Hash Router =====
     const RouterContext = React.createContext(null);
-
-    function parsePath(path) {
-      // normalize leading '#'
-      const p = path || '';
-      return p.startsWith('#') ? p.slice(1) : p;
-    }
-
-    function makeMatcher(pattern) {
-      // patterns like /confirm/:code
-      const keys = [];
-      const rx = new RegExp('^' + pattern.replace(/\/:([^/]+)/g, (_,k)=>{ keys.push(k); return '/([^/]+)'; }) + '$');
-      return (pathname) => {
-        const m = pathname.match(rx);
-        if (!m) return null;
-        const params = {};
-        keys.forEach((k,i)=> params[k] = decodeURIComponent(m[i+1]));
-        return params;
-      };
-    }
-
-    function Router({ routes, children }) {
-      const [pathname, setPathname] = React.useState(()=> parsePath(location.hash) || '/');
-
-      React.useEffect(()=>{
-        const onHash = ()=> setPathname(parsePath(location.hash) || '/');
-        window.addEventListener('hashchange', onHash);
-        if (!location.hash) location.hash = '#/'; // default
-        return ()=> window.removeEventListener('hashchange', onHash);
-      }, []);
-
-      const navigate = React.useCallback((to, { replace=false }={})=>{
-        const hash = to.startsWith('#') ? to : '#'+to;
-        if (replace) location.replace(hash); else location.hash = hash;
-      }, []);
-
+    const parseHash = () => (location.hash ? location.hash.slice(1) : '/') || '/';
+    const makeMatcher = (pattern) => {
+      const keys=[]; const rx=new RegExp('^'+pattern.replace(/\/:([^/]+)/g,(_,k)=>{keys.push(k);return '/([^/]+)';})+'$');
+      return (pathname)=>{ const m=pathname.match(rx); if(!m) return null; const params={}; keys.forEach((k,i)=>params[k]=decodeURIComponent(m[i+1])); return params; };
+    };
+    function Router({ routes }) {
+      const [path,setPath] = React.useState(parseHash());
+      React.useEffect(()=>{ const h=()=>setPath(parseHash()); addEventListener('hashchange',h); if(!location.hash) location.hash='#/'; return()=>removeEventListener('hashchange',h); },[]);
+      const navigate = (to,{replace}={}) => { const hash=to.startsWith('#')?to:'#'+to; replace?location.replace(hash):location.hash=hash; };
       const match = React.useMemo(()=>{
-        for (const r of routes) {
-          const params = r.matcher(pathname);
-          if (params) return { element: r.element, params };
-        }
-        return { element: React.createElement('div', null, 'Not found'), params:{} };
-      }, [pathname, routes]);
-
-      const ctx = React.useMemo(()=>({ pathname, params: match.params, navigate }), [pathname, match.params, navigate]);
-
-      return React.createElement(RouterContext.Provider, { value: ctx },
-        children ? children : match.element
-      );
+        for (const r of routes){ const params=r.matcher(path); if(params) return {element:r.element(params), params}; }
+        return {element: ()=>React.createElement('div',null,'Not found'), params:{}};
+      },[path,routes]);
+      return React.createElement(RouterContext.Provider, { value:{path, navigate, params:match.params} }, match.element);
     }
+    const useNav = ()=> React.useContext(RouterContext).navigate;
+    const useLoc = ()=> React.useContext(RouterContext);
 
-    function useLocation() {
-      return React.useContext(RouterContext);
-    }
-    function useNavigate() {
-      return React.useContext(RouterContext).navigate;
-    }
-    function Link({ to, children, style, className }) {
-      const href = to.startsWith('#') ? to : '#'+to;
-      return React.createElement('a', { href, style, className }, children);
-    }
-    function Navigate({ to, replace }) {
-      const nav = useNavigate();
-      React.useEffect(()=> { nav(to, { replace }); }, [to, replace, nav]);
-      return null;
-    }
-
-    // =========================================================
-    // App code (adapted to use the tiny router above)
-    // =========================================================
-    const { useState, useMemo, useEffect, useContext, createContext } = React;
-    const { createRoot } = ReactDOM;
-
-    // ---- Auth / RBAC (owner seeded) ----
-    const AuthCtx = createContext(null);
-    const seedOwner = { id:"u_owner", email:"jacob.dorton@gmail.com", name:"Jacob Dorton", roles:["owner"] };
+    // ===== auth store with localStorage =====
+    const AuthCtx = React.createContext(null);
+    const loadUser = () => {
+      try { return JSON.parse(localStorage.getItem('vc_user')||'null'); } catch { return null; }
+    };
     function AuthProvider({children}) {
-      const [user,setUser] = useState(seedOwner);
-      const login = (as="client") => {
-        if (as==="owner") setUser(seedOwner);
-        else if (as==="admin") setUser({ id:"u_admin", email:"admin@visualcraft", name:"Admin", roles:["admin"] });
-        else setUser({ id:"u_client", email:"client@example.com", name:"Client", roles:["client"] });
-      };
-      const logout = () => setUser(null);
-      const hasRole = (r) => !!user?.roles?.includes(r);
-      return React.createElement(AuthCtx.Provider, { value:{user,login,logout,hasRole} }, children);
+      const [user,setUser] = React.useState(loadUser);
+      const save = (u)=>{ setUser(u); localStorage.setItem('vc_user', JSON.stringify(u)); };
+      const loginEmail = (email, role='client') => save({ id:'u_'+role, email, roles:[role] });
+      const loginOwner = () => save({ id:'u_owner', email:'owner@visualcraft', roles:['owner','admin'] });
+      const loginAdmin = () => save({ id:'u_admin', email:'admin@visualcraft', roles:['admin'] });
+      const logout = ()=>{ setUser(null); localStorage.removeItem('vc_user'); };
+      const hasRole = (r)=> !!user?.roles?.includes(r);
+      return React.createElement(AuthCtx.Provider,{value:{user,loginEmail,loginOwner,loginAdmin,logout,hasRole}},children);
     }
-    function RequireRole({ anyOf, children }) {
-      const { user } = React.useContext(AuthCtx);
-      if (!user) return React.createElement(Navigate, { to:"/" , replace:true });
-      if (anyOf && !anyOf.some(r => user.roles?.includes(r))) return React.createElement(Navigate, { to:"/", replace:true });
-      return children;
-    }
+    const useAuth = ()=> React.useContext(AuthCtx);
 
-    // ---- UI atoms ----
-    const Button = ({children, onClick, variant="dark", style}) =>
-      React.createElement('button', {
-        onClick,
-        className:`btn ${variant==="dark"?"btn-dark":variant==="mid"?"btn-mid":variant==="ghost"?"btn-ghost":""}`,
-        style
-      }, children);
+    // ===== UI atoms =====
+    const Button = ({children, onClick, variant="dark", style, type}) =>
+      React.createElement('button',{onClick, className:`btn ${variant==="dark"?"btn-dark":variant==="mid"?"btn-mid":"btn-ghost"}`, style, type}, children);
+    const Card = ({style, children}) => React.createElement('div',{className:'card', style}, children);
+    const LinkA = ({to,children}) => React.createElement('a',{href:to.startsWith('#')?to:'#'+to},children);
 
-    const Card = ({style, children}) =>
-      React.createElement('div', { className:'card', style }, children);
+    const Section = ({title, children}) =>
+      React.createElement('div',{style:{maxWidth:900, margin:'0 auto', padding:'16px 16px 24px'}},
+        React.createElement('h2',{style:{fontSize:28, margin:'8px 0 12px'}}, title),
+        React.createElement(Card,{style:{background:'#fff', border:'1px solid #e5e5e5'}}, children)
+      );
 
-    const PillButton = ({label, to}) =>
-      React.createElement(Link, { to, className:'pill' }, label);
-
-    // ---- Pages ----
+    // ===== pages =====
     function NavBar(){
-      const { user, logout, hasRole } = React.useContext(AuthCtx);
-      return React.createElement('div', { style:{
-        display:'flex',justifyContent:'space-between',alignItems:'center',
-        padding:'12px 16px',borderBottom:'1px solid #eee',position:'sticky',top:0,background:'#fff',zIndex:10
-      }},
-        React.createElement(Link, { to:'/', style:{textDecoration:'none', color:'#111'}}, React.createElement('strong', null, 'Visual Craft')),
-        React.createElement('div', { style:{display:'flex',gap:12,alignItems:'center'}},
-          user && React.createElement(Link,{to:'/book'},'Book'),
-          user && React.createElement(Link,{to:'/download'},'Download'),
-          user && (hasRole('owner')||hasRole('admin')) && React.createElement(Link,{to:'/admin'},'Admin'),
-          user && React.createElement('span',{style:{color:'#4d4d4d'}}, user.email),
-          user ? React.createElement(Button,{variant:'ghost', onClick:logout}, 'Log out') : null
+      const { user, logout, hasRole } = useAuth();
+      return React.createElement('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'12px 16px',borderBottom:'1px solid #eee',position:'sticky',top:0,background:'#fff',zIndex:10}},
+        React.createElement(LinkA,{to:'/'}, React.createElement('strong',null,'Visual Craft')),
+        React.createElement('div',{className:'row',style:{alignItems:'center'}},
+          user && React.createElement(LinkA,{to:'/book'},'Book'),
+          user && React.createElement(LinkA,{to:'/download'},'Download'),
+          user && (hasRole('owner')||hasRole('admin')) && React.createElement(LinkA,{to:'/admin'},'Admin'),
+          user && React.createElement('span',null, user.email),
+          user ? React.createElement(Button,{variant:'ghost',onClick:logout},'Log out') : null
         )
       );
     }
 
-    function Section({title, children}) {
-      return React.createElement('div',{ style:{ maxWidth:900, margin:'0 auto', padding:'16px 16px 24px'}},
-        React.createElement('h2',{ style:{ fontSize:28, margin:'8px 0 12px'}}, title),
-        React.createElement(Card,{ style:{ background:'#fff', border:'1px solid #e5e5e5'}}, children)
-      );
-    }
-
-    function SplashLogin(){
-      const { login } = React.useContext(AuthCtx);
-      return React.createElement('div',{ style:{
-        minHeight:'100vh', backgroundImage:'var(--splash-url)', backgroundSize:'cover', backgroundPosition:'center', position:'relative'
-      }},
-        React.createElement(Card, { style:{ position:'absolute', top:'44%', left:'50%', transform:'translate(-50%,-50%)',
-          width:'min(92vw,700px)', padding:8 } },
-          React.createElement('h1',{ style:{ fontSize:'clamp(26px,4vw,36px)', margin:0, color:'#1a1a1a', textAlign:'center', lineHeight:1.15 } }, 'Visual Craft Photography'),
-          React.createElement('p',{ style:{ textAlign:'center', color:'#4d4d4d', marginTop:8 }}, 'Sign in or create an account'),
-          React.createElement('div',{ style:{ display:'grid', gap:12, marginTop:24 }},
-            React.createElement(Button,{variant:'dark', onClick:()=>login('client')}, 'Log in'),
-            React.createElement(Button,{variant:'mid', onClick:()=>login('client')}, 'Create account'),
-            React.createElement('div',{ style:{ display:'flex', gap:8, justifyContent:'center', marginTop:6 }},
-              React.createElement(Button,{variant:'ghost', onClick:()=>login('owner')}, 'Owner demo'),
-              React.createElement(Button,{variant:'ghost', onClick:()=>login('admin')}, 'Admin demo')
+    function Splash(){
+      const nav = useNav();
+      const { loginOwner, loginAdmin } = useAuth();
+      return React.createElement('div',{style:{minHeight:'100vh',backgroundImage:'var(--splash-url)',backgroundSize:'cover',backgroundPosition:'center',position:'relative'}},
+        React.createElement(Card,{style:{position:'absolute',top:'44%',left:'50%',transform:'translate(-50%,-50%)',width:'min(92vw,700px)',padding:8}},
+          React.createElement('h1',{style:{fontSize:'clamp(26px,4vw,36px)',margin:0,textAlign:'center'}},'Visual Craft Photography'),
+          React.createElement('p',{style:{textAlign:'center',color:'#4d4d4d',marginTop:8}},'Sign in or create an account'),
+          React.createElement('div',{style:{display:'grid',gap:12,marginTop:24}},
+            React.createElement(Button,{variant:'dark',onClick:()=>nav('/login')},'Log in'),
+            React.createElement(Button,{variant:'mid',onClick:()=>nav('/signup')},'Create account'),
+            React.createElement('div',{className:'row',style:{justifyContent:'center',marginTop:6}},
+              React.createElement(Button,{variant:'ghost',onClick:()=>{loginOwner(); nav('/book');}},'Owner demo'),
+              React.createElement(Button,{variant:'ghost',onClick:()=>{loginAdmin(); nav('/admin');}},'Admin demo')
             )
           )
         ),
-        React.createElement(PillButton,{label:'Share', to:'/download'})
+        React.createElement(LinkA,{to:'/download', className:'pill'},'Share')
       );
     }
 
+    function LoginPage(){
+      const nav = useNav();
+      const { loginEmail } = useAuth();
+      const [email,setEmail] = React.useState('');
+      const [pass,setPass] = React.useState('');
+      const submit = (e)=>{ e.preventDefault(); loginEmail(email.trim()||'client@example.com','client'); nav('/book'); };
+      return React.createElement(Section,{title:'Log in'},
+        React.createElement('form',{onSubmit:submit, style:{display:'grid',gap:12,maxWidth:420}},
+          React.createElement('input',{className:'field', placeholder:'Email', type:'email', value:email, onChange:e=>setEmail(e.target.value)}),
+          React.createElement('input',{className:'field', placeholder:'Password', type:'password', value:pass, onChange:e=>setPass(e.target.value)}),
+          React.createElement(Button,{variant:'dark', type:'submit'},'Continue'),
+          React.createElement('div',null,'No account? ', React.createElement(LinkA,{to:'/signup'},'Create one'))
+        )
+      );
+    }
+
+    function SignupPage(){
+      const nav = useNav();
+      const { loginEmail } = useAuth();
+      const [name,setName] = React.useState('');
+      const [email,setEmail] = React.useState('');
+      const [pass,setPass] = React.useState('');
+      const submit = (e)=>{ e.preventDefault(); // pretend to create account
+        loginEmail(email.trim()||'client@example.com','client'); nav('/book');
+      };
+      return React.createElement(Section,{title:'Create account'},
+        React.createElement('form',{onSubmit:submit, style:{display:'grid',gap:12,maxWidth:420}},
+          React.createElement('input',{className:'field', placeholder:'Full name', value:name, onChange:e=>setName(e.target.value)}),
+          React.createElement('input',{className:'field', placeholder:'Email', type:'email', value:email, onChange:e=>setEmail(e.target.value)}),
+          React.createElement('input',{className:'field', placeholder:'Password', type:'password', value:pass, onChange:e=>setPass(e.target.value)}),
+          React.createElement(Button,{variant:'dark', type:'submit'},'Create account')
+        )
+      );
+    }
+
+    function RequireRole({anyOf, children}){
+      const { user } = useAuth();
+      const nav = useNav();
+      React.useEffect(()=>{
+        if (!user) nav('/login',{replace:true});
+        else if (anyOf && !anyOf.some(r=>user.roles?.includes(r))) nav('/',{replace:true});
+      },[user]);
+      if (!user) return null;
+      if (anyOf && !anyOf.some(r=>user.roles?.includes(r))) return null;
+      return children;
+    }
+
+    // ==== Booking (with your images + address autocomplete fallback) ====
     function BookingFlow(){
+      const nav = useNav();
       const [step,setStep] = React.useState(0);
       const [form,setForm] = React.useState({ listingType:null, pkg:null, place:null, slot:null });
-
       const listingTypes = [
-        { key:'residential', label:'Residential Listing' },
-        { key:'land', label:'Land Listing' },
-        { key:'commercial', label:'Commercial Listing' },
+        { key:'residential', label:'Residential Listing', img:'/images/residential.jpg' },
+        { key:'land',        label:'Land Listing',        img:'/images/land.jpg' },
+        { key:'commercial',  label:'Commercial Listing',  img:'/images/commercial.jpg' },
       ];
       const packages = [
-        { key:'silver', label:'Silver Package', minutes:60, desc:'Professional photography of interior and exterior of property.' },
-        { key:'gold', label:'Gold Package', minutes:90, desc:'Professional photography of interior and exterior of property, and a Video Walkthrough Tour.' },
-        { key:'platinum', label:'Platinum Package', minutes:120, desc:'Professional photography of interior and exterior of property. A Video Walkthrough Tour, Drone Video and Photography, as well as floor plan illustrations.' },
+        { key:'silver',   label:'Silver Package',   minutes:60,  desc:'Professional photography of interior and exterior.' },
+        { key:'gold',     label:'Gold Package',     minutes:90,  desc:'Photos + Video Walkthrough.' },
+        { key:'platinum', label:'Platinum Package', minutes:120, desc:'Photos + Walkthrough + Drone + Floor plans.' },
+      ];
+      const fallbackPlaces = [
+        "123 Main St, Asheville, NC",
+        "18 Biltmore Ave, Asheville, NC",
+        "1 Page Ave, Asheville, NC",
+        "4718 Lake Park Dr Unit #2, Johnson City, TN 37615"
       ];
 
       function TypeStep(){
         return React.createElement(Section,{title:'Choose a Listing Type'},
-          React.createElement('div',{style:{display:'grid',gap:12}},
+          React.createElement('div',{className:'row',style:{display:'grid',gap:12,gridTemplateColumns:'repeat(auto-fit,minmax(240px,1fr))'}},
             ...listingTypes.map(t =>
-              React.createElement('button',{ key:t.key, onClick:()=>{ setForm(f=>({...f, listingType:t.key})); setStep(1); },
-                style:{ textAlign:'left', padding:16, borderRadius:12, border:'1px solid #e5e5e5', background:'#fff' }}, t.label)
+              React.createElement('div',{key:t.key,className:'tile',onClick:()=>{setForm(f=>({...f,listingType:t.key}));setStep(1);}},
+                React.createElement('img',{src:t.img, alt:t.label}),
+                React.createElement('div',{className:'label'},t.label)
+              )
             )
           )
         );
@@ -232,39 +228,38 @@
       function PackageStep(){
         return React.createElement(Section,{title:'Select a Package'},
           React.createElement('div',{style:{display:'grid',gap:12}},
-            ...packages.map(p =>
-              React.createElement('button',{ key:p.key, onClick:()=>{ setForm(f=>({...f, pkg:p})); setStep(2); },
-                style:{ textAlign:'left', padding:16, borderRadius:12, border:'1px solid #e5e5e5', background:'#fff' }},
-                React.createElement('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',gap:8}},
-                  React.createElement('div',null,
-                    React.createElement('div',{style:{fontSize:18}}, p.label),
-                    React.createElement('div',{style:{color:'#4d4d4d',marginTop:4}}, p.desc)
-                  ),
-                  React.createElement('div',{style:{fontSize:14,color:'#4d4d4d'}}, `${p.minutes} min`)
+            ...packages.map(p => React.createElement('button',{key:p.key,onClick:()=>{setForm(f=>({...f,pkg:p}));setStep(2);},
+                style:{textAlign:'left',padding:16,borderRadius:12,border:'1px solid #e5e5e5',background:'#fff'}},
+                React.createElement('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center'}},
+                  React.createElement('div',null, React.createElement('div',{style:{fontSize:18}},p.label), React.createElement('div',{style:{color:'#4d4d4d',marginTop:4}},p.desc)),
+                  React.createElement('div',{style:{fontSize:14,color:'#4d4d4d'}},`${p.minutes} min`)
                 )
               )
             )
           )
         );
       }
-      const mockPlaces = [
-        { label: "123 Main St, Asheville, NC", lat: 35.5951, lng: -82.5515 },
-        { label: "18 Biltmore Ave, Asheville, NC", lat: 35.5938, lng: -82.5517 },
-        { label: "1 Page Ave, Asheville, NC", lat: 35.5959, lng: -82.5553 },
-      ];
-      const [q,setQ] = React.useState("");
-      const results = React.useMemo(()=> mockPlaces.filter(p => p.label.toLowerCase().includes(q.toLowerCase())), [q]);
-
       function AddressStep(){
+        const [q,setQ] = React.useState(''); const [sugs,setSugs] = React.useState([]);
+        React.useEffect(()=>{
+          if (!q) { setSugs([]); return; }
+          const hasGoogle = !!(window.google && google.maps?.places);
+          if (hasGoogle) {
+            const svc = new google.maps.places.AutocompleteService();
+            svc.getPlacePredictions({ input:q, componentRestrictions:{ country:['us'] } }, (preds, status)=>{
+              if (status !== google.maps.places.PlacesServiceStatus.OK || !preds) { setSugs([]); return; }
+              setSugs(preds.map(p=>p.description));
+            });
+          } else {
+            const low = q.toLowerCase(); setSugs(fallbackPlaces.filter(x=>x.toLowerCase().includes(low)).slice(0,5));
+          }
+        },[q]);
         return React.createElement(Section,{title:'Property Address'},
           React.createElement('div',{style:{display:'grid',gap:12}},
-            React.createElement('input',{ placeholder:'Search address (Google Maps)…', value:q, onChange:e=>setQ(e.target.value),
-              style:{ padding:14, borderRadius:12, border:'1px solid #e5e5e5' } }),
+            React.createElement('input',{className:'field',placeholder:'Start typing an address…',value:q,onChange:e=>setQ(e.target.value)}),
             React.createElement('div',{style:{display:'grid',gap:8}},
-              ...results.map(r =>
-                React.createElement('button',{ key:r.label, onClick:()=>{ setForm(f=>({...f, place:r})); setStep(3); },
-                  style:{ textAlign:'left', padding:12, borderRadius:12, border:'1px solid #e5e5e5', background:'#fff' }}, r.label)
-              )
+              ...sugs.map(s => React.createElement('button',{key:s,className:'suggest',
+                onClick:()=>{ setForm(f=>({...f, place:{label:s}})); setQ(s); setSugs([]); setStep(3); }}, s))
             )
           )
         );
@@ -273,51 +268,39 @@
         const slots = ['9:00 AM','10:00 AM','11:00 AM','1:00 PM','2:00 PM','3:00 PM'];
         return React.createElement(Section,{title:'Select a Time'},
           React.createElement('div',{style:{display:'grid',gap:12}},
-            ...slots.map(t =>
-              React.createElement('button',{ key:t, onClick:()=>{ setForm(f=>({...f, slot:{ label:t }})); setStep(4); },
-                style:{ textAlign:'left', padding:14, borderRadius:12, border:'1px solid #e5e5e5', background:'#fff', display:'flex', justifyContent:'space-between' }},
-                React.createElement('span',null,t),
-                React.createElement('span',{style:{color:'#4d4d4d'}}, form.pkg?.minutes ? `${form.pkg.minutes} min` : '')
-              )
-            )
+            ...slots.map(t => React.createElement('button',{key:t,onClick:()=>{setForm(f=>({...f, slot:{label:t}})); setStep(4);},
+              style:{textAlign:'left',padding:14,borderRadius:12,border:'1px solid #e5e5e5',background:'#fff',display:'flex',justifyContent:'space-between'}},
+              React.createElement('span',null,t),
+              React.createElement('span',{style:{color:'#4d4d4d'}}, form.pkg?.minutes?`${form.pkg.minutes} min`:'')
+            ))
           )
         );
       }
-      const makeCode = ()=> {
-        const s4 = () => Math.random().toString(36).slice(2, 6).toUpperCase();
-        const y = new Date().toISOString().slice(0,10).replace(/-/g,"");
-        return `VCP-${y}-${s4()}`;
-      };
-      const nav = useNavigate();
+      const makeCode = ()=> `VCP-${new Date().toISOString().slice(0,10).replace(/-/g,'')}-${Math.random().toString(36).slice(2,6).toUpperCase()}`;
       function ReviewStep(){
         return React.createElement(Section,{title:'Review & Confirm'},
           React.createElement('div',{style:{display:'grid',gap:12}},
-            React.createElement('div',null, `Listing Type: ${form.listingType||''}`),
-            React.createElement('div',null, `Package: ${form.pkg?.label||''}`),
-            React.createElement('div',null, `Address: ${form.place?.label||''}`),
-            React.createElement('div',null, `Time: ${form.slot?.label||''}`),
-            React.createElement('div',{style:{display:'flex',gap:12,marginTop:8}},
-              React.createElement(Button,{variant:'dark', onClick:()=>nav('/confirm/'+makeCode())}, 'Confirm Appointment'),
-              React.createElement(Button,{variant:'mid', onClick:()=>setStep(3)}, 'Back')
+            React.createElement('div',null,`Listing Type: ${form.listingType||''}`),
+            React.createElement('div',null,`Package: ${form.pkg?.label||''}`),
+            React.createElement('div',null,`Address: ${form.place?.label||''}`),
+            React.createElement('div',null,`Time: ${form.slot?.label||''}`),
+            React.createElement('div',{className:'row',style:{marginTop:8}},
+              React.createElement(Button,{variant:'dark',onClick:()=>{location.hash='#/confirm/'+makeCode();}},'Confirm Appointment'),
+              React.createElement(Button,{variant:'mid',onClick:()=>setStep(3)},'Back')
             )
           )
         );
       }
-
-      function Stepper({current}) {
-        const steps = ['Type','Package','Address','Time','Review'];
-        return React.createElement('div',{style:{display:'flex',gap:12,justifyContent:'center',alignItems:'center',margin:'16px auto 8px',maxWidth:720}},
-          ...steps.map((s,i)=>{
-            const done = i<current, active = i===current;
-            return React.createElement('div',{ key:s, style:{
-              padding:'8px 12px', borderRadius:999, border:'1px solid #e5e5e5',
-              fontSize:14, background: active?'#111':done?'#4d4d4d':'#fff', color:(active||done)?'#fff':'#111'
-            }}, s)
-          })
+      const Stepper = ({current})=>{
+        const steps=['Type','Package','Address','Time','Review'];
+        return React.createElement('div',{className:'row',style:{justifyContent:'center',margin:'16px auto 8px',maxWidth:720}},
+          ...steps.map((s,i)=>React.createElement('div',{key:s,style:{
+            padding:'8px 12px',borderRadius:999,border:'1px solid #e5e5e5',
+            fontSize:14, background:i===current?'#111':i<current?'#4d4d4d':'#fff', color:i<=current?'#fff':'#111'
+          }},s))
         );
-      }
-
-      return React.createElement('div', {style:{paddingBottom:32}},
+      };
+      return React.createElement('div',null,
         React.createElement(Stepper,{current:step}),
         step===0 && React.createElement(TypeStep),
         step===1 && React.createElement(PackageStep),
@@ -327,9 +310,7 @@
       );
     }
 
-    function ConfirmPage(){
-      const { pathname } = useLocation();
-      const code = pathname.split('/').pop();
+    function ConfirmPage({code}){
       return React.createElement(Section,{title:'Appointment Confirmed'},
         React.createElement('div',{style:{textAlign:'center'}},
           React.createElement('div',{style:{fontSize:28, marginBottom:8}}, 'Confirmation #'),
@@ -337,7 +318,7 @@
           React.createElement('div',{style:{color:'#4d4d4d', marginBottom:16, maxWidth:560, marginInline:'auto', lineHeight:1.35}},
             'A confirmation email with an .ics invite will be sent. It includes a one-tap Reschedule link.'
           ),
-          React.createElement('div',{style:{display:'flex',justifyContent:'center',gap:12,flexWrap:'wrap',maxWidth:560,margin:'0 auto'}},
+          React.createElement('div',{className:'row',style:{justifyContent:'center',maxWidth:560,margin:'0 auto'}},
             React.createElement(Button,{variant:'mid', style:{minWidth:260}}, 'Add to Calendar (ICS)'),
             React.createElement(Button,{variant:'dark', style:{minWidth:260}}, 'Manage Booking')
           )
@@ -345,21 +326,42 @@
       );
     }
 
+    // PWA install capture
+    let deferredPrompt = null;
+    window.addEventListener('beforeinstallprompt', (e)=>{ e.preventDefault(); deferredPrompt = e; });
+
     function DownloadPage(){
+      const [canInstall,setCanInstall] = React.useState(!!deferredPrompt);
+      React.useEffect(()=>{
+        const h = ()=> setCanInstall(!!deferredPrompt);
+        window.addEventListener('beforeinstallprompt', h);
+        return ()=> window.removeEventListener('beforeinstallprompt', h);
+      },[]);
+      const doInstall = async ()=>{
+        if (!deferredPrompt) return;
+        deferredPrompt.prompt();
+        await deferredPrompt.userChoice;
+        deferredPrompt = null; setCanInstall(false);
+      };
       return React.createElement(Section,{title:'Download / Install'},
         React.createElement('div',{style:{display:'grid',gap:12}},
-          React.createElement('div',null, React.createElement('strong',null,'PWA (Web App): '),
-            'On iPhone Safari: Share → Add to Home Screen. On Android Chrome: ⋮ → Install App.'),
-          React.createElement('div',null, React.createElement(Link,{to:'/'}, 'Back to login'))
+          canInstall
+            ? React.createElement(Button,{variant:'dark',onClick:doInstall},'Install app')
+            : React.createElement('div',null,
+                React.createElement('p',null,'On iPhone/iPad (Safari): Share → Add to Home Screen.'),
+                React.createElement('p',null,'On Android (Chrome): ⋮ → Install App.'),
+                React.createElement('p',null,'On Desktop (Chrome/Edge): look for the Install icon in the address bar.')
+              ),
+          React.createElement('div',null, React.createElement(LinkA,{to:'/'}, 'Back to login'))
         )
       );
     }
 
-    function AdminIndex(){
+    function AdminHome(){
       return React.createElement(Section,{title:'Admin'},
-        React.createElement('div',{style:{display:'flex',gap:12,flexWrap:'wrap'}},
-          React.createElement(Link,{to:'/admin/today'}, React.createElement(Button,{variant:'dark'}, 'Day Routing Preview')),
-          React.createElement(Link,{to:'/admin/new-booking'}, React.createElement(Button,{variant:'mid'}, 'New Booking'))
+        React.createElement('div',{className:'row'},
+          React.createElement(LinkA,{to:'/admin/today'}, React.createElement(Button,{variant:'dark'}, 'Day Routing Preview')),
+          React.createElement(LinkA,{to:'/book'}, React.createElement(Button,{variant:'mid'}, 'New Booking'))
         )
       );
     }
@@ -380,24 +382,37 @@
       );
     }
 
-    // ------------ assemble routes ------------
-    function AppShell(){
+    // ===== Root app & routes =====
+    function App(){
       const routes = [
-        { path: '/',               element: React.createElement(SplashLogin) },
-        { path: '/book',           element: React.createElement(BookingFlow) },
-        { path: '/confirm/:code',  element: React.createElement(ConfirmPage) },
-        { path: '/download',       element: React.createElement(DownloadPage) },
-        { path: '/admin',          element: React.createElement(RequireRole,{anyOf:['owner','admin']}, React.createElement(AdminIndex)) },
-        { path: '/admin/today',    element: React.createElement(RequireRole,{anyOf:['owner','admin']}, React.createElement(AdminToday)) },
-      ].map(r => ({ ...r, matcher: makeMatcher(r.path) }));
+        { path:'/',              element:()=>React.createElement(AuthProvider,null, React.createElement(AppShell)) },
+      ].map(r=>({...r,matcher:makeMatcher(r.path)}));
+      // The first route renders the full shell so we keep Auth in one place.
+      return React.createElement(Router,{routes});
+    }
 
-      return React.createElement(AuthProvider,null,
+    function AppShell(){
+      const { user, hasRole } = useAuth();
+      const loc = useLoc();
+      const path = loc.path;
+      const routeEl = (()=> {
+        if (path === '/' ) return React.createElement(Splash);
+        if (path === '/login') return React.createElement(LoginPage);
+        if (path === '/signup') return React.createElement(SignupPage);
+        if (path === '/book')  return user ? React.createElement(BookingFlow) : React.createElement(LoginPage);
+        if (path.startsWith('/confirm/')) return React.createElement(ConfirmPage, { code: path.split('/').pop() });
+        if (path === '/download') return React.createElement(DownloadPage);
+        if (path === '/admin') return React.createElement(RequireRole,{anyOf:['owner','admin']}, React.createElement(AdminHome));
+        if (path === '/admin/today') return React.createElement(RequireRole,{anyOf:['owner','admin']}, React.createElement(AdminToday));
+        return React.createElement('div',null,'Not found');
+      })();
+      return React.createElement(React.Fragment,null,
         React.createElement(NavBar),
-        React.createElement(Router,{ routes })
+        routeEl
       );
     }
 
-    createRoot(document.getElementById('root')).render(React.createElement(AppShell));
+    ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App));
   </script>
 </body>
 </html>
