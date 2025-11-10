@@ -1,12 +1,13 @@
-// server.js — explicit static mounts + SPA fallback + simple API + diagnostics
-const path = require('path');
-const fs = require('fs');
-const express = require('express');
-const cors = require('cors');
+// ESM server.js — explicit static mounts + SPA fallback + simple API + diagnostics
+import path from 'node:path';
+import fs from 'node:fs';
+import express from 'express';
+import cors from 'cors';
 
+// ESM-safe root
+const ROOT = process.cwd();
 const app = express();
 const PORT = process.env.PORT || 10000;
-const ROOT = process.cwd();
 
 app.use(cors());
 app.use(express.json());
@@ -15,13 +16,13 @@ app.use(express.json());
 const imgDir = path.join(ROOT, 'images');
 const icoDir = path.join(ROOT, 'icons');
 
-// Serve /images/* from ./images ONLY (cannot be hijacked by SPA)
+// Serve /images/* from ./images (never falls through to SPA)
 app.use('/images', express.static(imgDir, { fallthrough: false, extensions: ['jpg','jpeg','png'] }));
 
-// Serve /icons/* from ./icons (optional)
+// Serve /icons/* (optional)
 app.use('/icons', express.static(icoDir, { fallthrough: true }));
 
-// Serve /manifest.json or /manifest.webmanifest if present
+// Serve manifest json if present
 app.get(['/manifest.json','/manifest.webmanifest'], (req, res) => {
   const files = ['manifest.json','manifest.webmanifest'];
   for (const f of files) {
@@ -31,10 +32,10 @@ app.get(['/manifest.json','/manifest.webmanifest'], (req, res) => {
   res.status(404).json({ error: 'manifest not found' });
 });
 
-// Root static files (index.html, etc.)
+// Root static (index.html, etc.)
 app.use(express.static(ROOT, { extensions: ['html'] }));
 
-// ---------- Minimal API (stubs) ----------
+// ---------- Minimal API (stubs for now) ----------
 app.get('/api/health', (req, res) => {
   res.json({ ok: true, time: new Date().toISOString() });
 });
@@ -79,7 +80,7 @@ app.get('/__list/images', (req, res) => {
   }
 });
 
-// ---------- SPA fallback (last; skips /api & our static mounts) ----------
+// ---------- SPA fallback (must be last; skip api & explicit static) ----------
 app.get(/^\/(?!api\/|images\/|icons\/|manifest\.json$|manifest\.webmanifest$).*/, (req, res) => {
   res.sendFile(path.join(ROOT, 'index.html'));
 });
