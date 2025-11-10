@@ -1,190 +1,332 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta
-      name="viewport"
-      content="width=device-width, initial-scale=1, viewport-fit=cover"
-    />
-    <title>Visual Craft Photography</title>
-    <meta name="theme-color" content="#000000" />
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Visual Craft Photography</title>
+  <meta name="theme-color" content="#000000" />
+  <link rel="icon" href="/192.png" />
+  <link rel="apple-touch-icon" href="/512.png" />
+  <style>
+    :root { --splash-url: url('/images/splash-bg.jpg'); }
+    html, body, #root { height: 100%; margin: 0; }
+    body { font-family: Georgia, Times, serif; color:#111; background:#fff; }
+    .diag { position: fixed; top: 6px; left: 6px; font: 12px/1.4 system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; color:#222 }
+    .card { background: rgba(255,255,255,0.55); border: 2px solid rgba(255,255,255,0.2); border-radius: 20px; padding: 24px; box-shadow: 0 10px 30px rgba(0,0,0,0.12); }
+    .btn { display:inline-block; border:none; border-radius:12px; padding:14px 22px; min-height:48px; font-size:16px; cursor:pointer }
+    .btn-dark { background:#1a1a1a; color:#fff }
+    .btn-mid  { background:#4d4d4d; color:#fff }
+    .btn-ghost{ background:transparent; color:#1a1a1a; border:2px solid #1a1a1a }
+    .pill { position:fixed; bottom:16px; left:50%; transform:translateX(-50%); background:rgba(255,255,255,0.55); padding:10px 18px; border-radius:12px; border:2px solid rgba(255,255,255,0.25); font-size:14px; color:#1a1a1a; text-decoration:none }
+  </style>
+</head>
+<body>
+  <div class="diag" id="diag">Diagnostics loading…</div>
+  <div id="root"></div>
 
-    <!-- Basic styles -->
-    <style>
-      :root {
-        --font: Georgia, Times, serif;
-        --bg: #fff;
-        --fg: #111;
-        --muted: #4d4d4d;
+  <!-- React + ReactDOM (UMD) -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <!-- ✅ The missing piece: React Router DOM UMD -->
+  <script crossorigin src="https://unpkg.com/react-router-dom@6/umd/react-router-dom.production.min.js"></script>
+
+  <script>
+    // tiny diagnostic
+    (function(){
+      const ok = (x) => x ? 'OK' : 'MISSING';
+      const hasReact = !!window.React;
+      const hasReactDOM = !!window.ReactDOM;
+      const hasRouter = !!window.ReactRouterDOM;
+      const imgPing = new Image();
+      imgPing.onload = () => document.getElementById('diag').textContent =
+        `React: ${ok(hasReact)} ReactDOM: ${ok(hasReactDOM)} Router: ${ok(hasRouter)} Image: OK`;
+      imgPing.onerror = () => document.getElementById('diag').textContent =
+        `React: ${ok(hasReact)} ReactDOM: ${ok(hasReactDOM)} Router: ${ok(hasRouter)} Image: MISSING`;
+      imgPing.src = '/images/splash-bg.jpg';
+    })();
+
+    const { useState, useMemo, useEffect, useContext, createContext } = React;
+    const { createRoot } = ReactDOM;
+    const { HashRouter, Routes, Route, Link, Navigate, useNavigate, useLocation } = window.ReactRouterDOM;
+
+    // ---- Auth / RBAC (owner seeded) ----
+    const AuthCtx = createContext(null);
+    const seedOwner = { id:"u_owner", email:"jacob.dorton@gmail.com", name:"Jacob Dorton", roles:["owner"] };
+    function AuthProvider({children}) {
+      const [user,setUser] = useState(seedOwner);
+      const login = (as="client") => {
+        if (as==="owner") setUser(seedOwner);
+        else if (as==="admin") setUser({ id:"u_admin", email:"admin@visualcraft", name:"Admin", roles:["admin"] });
+        else setUser({ id:"u_client", email:"client@example.com", name:"Client", roles:["client"] });
+      };
+      const logout = () => setUser(null);
+      const hasRole = (r) => !!user?.roles?.includes(r);
+      return React.createElement(AuthCtx.Provider, { value:{user,login,logout,hasRole} }, children);
+    }
+    function RequireRole({ anyOf, children }) {
+      const { user } = React.useContext(AuthCtx);
+      if (!user) return React.createElement(Navigate, { to:"/" , replace:true });
+      if (anyOf && !anyOf.some(r => user.roles?.includes(r))) return React.createElement(Navigate, { to:"/", replace:true });
+      return children;
+    }
+
+    // ---- UI atoms ----
+    const Button = ({children, onClick, variant="dark", style}) =>
+      React.createElement('button', {
+        onClick,
+        className:`btn ${variant==="dark"?"btn-dark":variant==="mid"?"btn-mid":variant==="ghost"?"btn-ghost":""}`,
+        style
+      }, children);
+
+    const Card = ({style, children}) =>
+      React.createElement('div', { className:'card', style }, children);
+
+    const PillButton = ({label, to}) =>
+      React.createElement(Link, { to, className:'pill' }, label);
+
+    // ---- Pages ----
+    function NavBar(){
+      const { user, logout, hasRole } = React.useContext(AuthCtx);
+      return React.createElement('div', { style:{
+        display:'flex',justifyContent:'space-between',alignItems:'center',
+        padding:'12px 16px',borderBottom:'1px solid #eee',position:'sticky',top:0,background:'#fff',zIndex:10
+      }},
+        React.createElement(Link, { to:'/', style:{textDecoration:'none', color:'#111'}}, React.createElement('strong', null, 'Visual Craft')),
+        React.createElement('div', { style:{display:'flex',gap:12,alignItems:'center'}},
+          user && React.createElement(Link,{to:'/book'},'Book'),
+          user && React.createElement(Link,{to:'/download'},'Download'),
+          user && (hasRole('owner')||hasRole('admin')) && React.createElement(Link,{to:'/admin'},'Admin'),
+          user && React.createElement('span',{style:{color:'#4d4d4d'}}, user.email),
+          user ? React.createElement(Button,{variant:'ghost', onClick:logout}, 'Log out') : null
+        )
+      );
+    }
+
+    function SplashLogin(){
+      const { login } = React.useContext(AuthCtx);
+      return React.createElement('div',{ style:{
+        minHeight:'100vh', backgroundImage:'var(--splash-url)', backgroundSize:'cover', backgroundPosition:'center', position:'relative'
+      }},
+        React.createElement(Card, { style:{ position:'absolute', top:'44%', left:'50%', transform:'translate(-50%,-50%)',
+          width:'min(92vw,700px)', padding:8 } },
+          React.createElement('h1',{ style:{ fontSize:'clamp(26px,4vw,36px)', margin:0, color:'#1a1a1a', textAlign:'center', lineHeight:1.15 } }, 'Visual Craft Photography'),
+          React.createElement('p',{ style:{ textAlign:'center', color:'#4d4d4d', marginTop:8 }}, 'Sign in or create an account'),
+          React.createElement('div',{ style:{ display:'grid', gap:12, marginTop:24 }},
+            React.createElement(Button,{variant:'dark', onClick:()=>login('client')}, 'Log in'),
+            React.createElement(Button,{variant:'mid', onClick:()=>login('client')}, 'Create account'),
+            React.createElement('div',{ style:{ display:'flex', gap:8, justifyContent:'center', marginTop:6 }},
+              React.createElement(Button,{variant:'ghost', onClick:()=>login('owner')}, 'Owner demo'),
+              React.createElement(Button,{variant:'ghost', onClick:()=>login('admin')}, 'Admin demo')
+            )
+          )
+        ),
+        React.createElement(PillButton,{label:'Share', to:'/download'})
+      );
+    }
+
+    function Section({title, children}) {
+      return React.createElement('div',{ style:{ maxWidth:900, margin:'0 auto', padding:'16px 16px 24px'}},
+        React.createElement('h2',{ style:{ fontSize:28, margin:'8px 0 12px'}}, title),
+        React.createElement(Card,{ style:{ background:'#fff', border:'1px solid #e5e5e5'}}, children)
+      );
+    }
+
+    function BookingFlow(){
+      const [step,setStep] = useState(0);
+      const [form,setForm] = useState({ listingType:null, pkg:null, place:null, slot:null });
+
+      const listingTypes = [
+        { key:'residential', label:'Residential Listing' },
+        { key:'land', label:'Land Listing' },
+        { key:'commercial', label:'Commercial Listing' },
+      ];
+      const packages = [
+        { key:'silver', label:'Silver Package', minutes:60, desc:'Professional photography of interior and exterior of property.' },
+        { key:'gold', label:'Gold Package', minutes:90, desc:'Professional photography of interior and exterior of property, and a Video Walkthrough Tour.' },
+        { key:'platinum', label:'Platinum Package', minutes:120, desc:'Professional photography of interior and exterior of property. A Video Walkthrough Tour, Drone Video and Photography, as well as floor plan illustrations.' },
+      ];
+
+      function TypeStep(){
+        return React.createElement(Section,{title:'Choose a Listing Type'},
+          React.createElement('div',{style:{display:'grid',gap:12}},
+            ...listingTypes.map(t =>
+              React.createElement('button',{ key:t.key, onClick:()=>{ setForm(f=>({...f, listingType:t.key})); setStep(1); },
+                style:{ textAlign:'left', padding:16, borderRadius:12, border:'1px solid #e5e5e5', background:'#fff' }}, t.label)
+            )
+          )
+        );
       }
-      * { box-sizing: border-box; }
-      html, body, #root { height: 100%; }
-      body {
-        margin: 0;
-        font-family: var(--font);
-        color: var(--fg);
-        background: var(--bg);
-      }
-      /* Splash background */
-      .splash {
-        min-height: 100%;
-        background-image: url('/images/splash-bg.jpg');
-        background-size: cover;
-        background-position: center;
-        position: relative;
-      }
-      /* Centered card */
-      .card {
-        background: rgba(255,255,255,0.55);
-        border: 2px solid rgba(255,255,255,0.2);
-        border-radius: 20px;
-        box-shadow: 0 10px 30px rgba(0,0,0,0.12);
-        width: min(92vw, 700px);
-        padding: 24px;
-        position: absolute;
-        top: 44%;
-        left: 50%;
-        transform: translate(-50%, -50%);
-      }
-      .btn {
-        display: block;
-        width: 100%;
-        border: none;
-        border-radius: 12px;
-        min-height: 48px;
-        padding: 14px 22px;
-        font-size: 16px;
-        cursor: pointer;
-        margin-top: 12px;
-      }
-      .btn.dark { background: #1a1a1a; color: #fff; }
-      .btn.mid  { background: #4d4d4d; color: #fff; }
-      .btn.ghost {
-        background: transparent; color: #1a1a1a; border: 2px solid #1a1a1a;
-        display: inline-block; width: auto; margin-right: 8px;
-      }
-      .topnav {
-        position: sticky; top: 0; background: #fff; border-bottom: 1px solid #eee;
-        display: flex; justify-content: space-between; align-items: center;
-        padding: 12px 16px; z-index: 10;
-      }
-      .a { color: #1a1a1a; text-decoration: none; }
-      .pill {
-        position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%);
-        background: rgba(255,255,255,0.55); color: #1a1a1a;
-        padding: 10px 18px; border-radius: 12px;
-        border: 2px solid rgba(255,255,255,0.25); font-size: 14px;
-        text-decoration: none;
-      }
-      .muted { color: var(--muted); }
-      .diag { font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; padding: 6px 8px; }
-    </style>
-
-    <!-- React 18 + ReactDOM 18 UMD -->
-    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <!-- React Router DOM 6 UMD (this provides window.ReactRouterDOM.HashRouter) -->
-    <script crossorigin src="https://unpkg.com/react-router-dom@6/umd/react-router-dom.production.min.js"></script>
-  </head>
-
-  <body>
-    <div id="root"></div>
-
-    <script>
-      // Quick diagnostics banner so we know libs loaded
-      (function diag() {
-        const ok = !!(window.React && window.ReactDOM && window.ReactRouterDOM);
-        const img = new Image();
-        let imgOk = false;
-        img.onload = () => { imgOk = true; render(); };
-        img.onerror = () => { imgOk = false; render(); };
-        img.src = '/images/splash-bg.jpg?_=' + Date.now();
-        function render() {
-          const el = document.createElement('div');
-          el.className = 'diag';
-          el.textContent = 'React: ' + (window.React ? 'OK' : 'MISSING')
-            + '  ReactDOM: ' + (window.ReactDOM ? 'OK' : 'MISSING')
-            + '  Router: ' + (window.ReactRouterDOM ? 'OK' : 'MISSING')
-            + '  Image: ' + (imgOk ? 'OK' : 'MISSING');
-          document.body.prepend(el);
-        }
-        if (ok) render();
-      })();
-    </script>
-
-    <script>
-      (function () {
-        const { useState } = React;
-        const { createRoot } = ReactDOM;
-        const { HashRouter, Routes, Route, Link } = ReactRouterDOM;
-
-        function Button({ variant='dark', onClick, children, style }) {
-          const cls = 'btn ' + (variant === 'mid' ? 'mid' : variant === 'ghost' ? 'ghost' : 'dark');
-          return React.createElement('button', { className: cls, onClick, style }, children);
-        }
-
-        function Nav() {
-          return React.createElement('div', { className: 'topnav' },
-            React.createElement(Link, { to: '/', className: 'a' }, React.createElement('strong', null, 'Visual Craft')),
-            React.createElement('div', null, [
-              React.createElement(Link, { to: '/book', className: 'a', key: 'b', style: { marginRight: 12 } }, 'Book'),
-              React.createElement(Link, { to: '/download', className: 'a', key: 'd' }, 'Download')
-            ])
-          );
-        }
-
-        function SplashLogin() {
-          return React.createElement('div', { className: 'splash' },
-            React.createElement('div', { className: 'card' }, [
-              React.createElement('h1', { style: { margin: 0, textAlign: 'center', fontSize: 'clamp(26px, 4vw, 36px)' } }, 'Visual Craft Photography'),
-              React.createElement('p', { className: 'muted', style: { textAlign: 'center', marginTop: 8 } }, 'Sign in or create an account'),
-              React.createElement(Button, { variant: 'dark', onClick: () => location.hash = '#/book' }, 'Log in'),
-              React.createElement(Button, { variant: 'mid', onClick: () => location.hash = '#/book' }, 'Create account'),
-            ]),
-            React.createElement(Link, { to: '/download', className: 'pill' }, 'Share')
-          );
-        }
-
-        function BookPage() {
-          return React.createElement('div', { style: { maxWidth: 900, margin: '12px auto', padding: '0 16px' } },
-            React.createElement('h2', null, 'Choose a Listing Type'),
-            React.createElement('div', null, [
-              React.createElement(Button, { key: 'r', variant: 'ghost' }, 'Residential Listing'),
-              React.createElement(Button, { key: 'l', variant: 'ghost' }, 'Land Listing'),
-              React.createElement(Button, { key: 'c', variant: 'ghost' }, 'Commercial Listing'),
-            ])
-          );
-        }
-
-        function DownloadPage() {
-          return React.createElement('div', { style: { maxWidth: 900, margin: '12px auto', padding: '0 16px' } },
-            React.createElement('h2', null, 'Download / Install'),
-            React.createElement('p', null, 'On iPhone Safari: Share → Add to Home Screen. On Android Chrome: ⋮ → Install App.'),
-            React.createElement('div', { style: { display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' } }, [
-              React.createElement('img', { key: 'i192', alt: 'Icon 192', src: '/192.png', style: { width: 64, height: 64, borderRadius: 14, border: '1px solid #e5e5e5' } }),
-              React.createElement('img', { key: 'i512', alt: 'Icon 512', src: '/512.png', style: { width: 72, height: 72, borderRadius: 16, border: '1px solid #e5e5e5' } })
-            ])
-          );
-        }
-
-        function App() {
-          return React.createElement(HashRouter, null,
-            React.createElement(React.Fragment, null, [
-              React.createElement(Nav, { key: 'n' }),
-              React.createElement('div', { key: 'r' },
-                React.createElement(Routes, null, [
-                  React.createElement(Route, { key: 'home', path: '/', element: React.createElement(SplashLogin) }),
-                  React.createElement(Route, { key: 'book', path: '/book', element: React.createElement(BookPage) }),
-                  React.createElement(Route, { key: 'dl', path: '/download', element: React.createElement(DownloadPage) })
-                ])
+      function PackageStep(){
+        return React.createElement(Section,{title:'Select a Package'},
+          React.createElement('div',{style:{display:'grid',gap:12}},
+            ...packages.map(p =>
+              React.createElement('button',{ key:p.key, onClick:()=>{ setForm(f=>({...f, pkg:p})); setStep(2); },
+                style:{ textAlign:'left', padding:16, borderRadius:12, border:'1px solid #e5e5e5', background:'#fff' }},
+                React.createElement('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',gap:8}},
+                  React.createElement('div',null,
+                    React.createElement('div',{style:{fontSize:18}}, p.label),
+                    React.createElement('div',{style:{color:'#4d4d4d',marginTop:4}}, p.desc)
+                  ),
+                  React.createElement('div',{style:{fontSize:14,color:'#4d4d4d'}}, `${p.minutes} min`)
+                )
               )
-            ])
-          );
-        }
+            )
+          )
+        );
+      }
+      // minimal address step (mock list)
+      const mockPlaces = [
+        { label: "123 Main St, Asheville, NC", lat: 35.5951, lng: -82.5515 },
+        { label: "18 Biltmore Ave, Asheville, NC", lat: 35.5938, lng: -82.5517 },
+        { label: "1 Page Ave, Asheville, NC", lat: 35.5959, lng: -82.5553 },
+      ];
+      const [q,setQ] = useState("");
+      const results = useMemo(()=> mockPlaces.filter(p => p.label.toLowerCase().includes(q.toLowerCase())), [q]);
 
-        const root = createRoot(document.getElementById('root'));
-        root.render(React.createElement(App));
-      })();
-    </script>
-  </body>
+      function AddressStep(){
+        return React.createElement(Section,{title:'Property Address'},
+          React.createElement('div',{style:{display:'grid',gap:12}},
+            React.createElement('input',{ placeholder:'Search address (Google Maps)…', value:q, onChange:e=>setQ(e.target.value),
+              style:{ padding:14, borderRadius:12, border:'1px solid #e5e5e5' } }),
+            React.createElement('div',{style:{display:'grid',gap:8}},
+              ...results.map(r =>
+                React.createElement('button',{ key:r.label, onClick:()=>{ setForm(f=>({...f, place:r})); setStep(3); },
+                  style:{ textAlign:'left', padding:12, borderRadius:12, border:'1px solid #e5e5e5', background:'#fff' }}, r.label)
+              )
+            )
+          )
+        );
+      }
+      function TimeStep(){
+        const day = new Date();
+        const slots = ['9:00 AM','10:00 AM','11:00 AM','1:00 PM','2:00 PM','3:00 PM'];
+        return React.createElement(Section,{title:'Select a Time'},
+          React.createElement('div',{style:{display:'grid',gap:12}},
+            ...slots.map(t =>
+              React.createElement('button',{ key:t, onClick:()=>{ setForm(f=>({...f, slot:{ label:t }})); setStep(4); },
+                style:{ textAlign:'left', padding:14, borderRadius:12, border:'1px solid #e5e5e5', background:'#fff', display:'flex', justifyContent:'space-between' }},
+                React.createElement('span',null,t),
+                React.createElement('span',{style:{color:'#4d4d4d'}}, form.pkg?.minutes ? `${form.pkg.minutes} min` : '')
+              )
+            )
+          )
+        );
+      }
+      const makeCode = ()=> {
+        const s4 = () => Math.random().toString(36).slice(2, 6).toUpperCase();
+        const y = new Date().toISOString().slice(0,10).replace(/-/g,"");
+        return `VCP-${y}-${s4()}`;
+      };
+      const nav = useNavigate();
+      function ReviewStep(){
+        return React.createElement(Section,{title:'Review & Confirm'},
+          React.createElement('div',{style:{display:'grid',gap:12}},
+            React.createElement('div',null, `Listing Type: ${form.listingType||''}`),
+            React.createElement('div',null, `Package: ${form.pkg?.label||''}`),
+            React.createElement('div',null, `Address: ${form.place?.label||''}`),
+            React.createElement('div',null, `Time: ${form.slot?.label||''}`),
+            React.createElement('div',{style:{display:'flex',gap:12,marginTop:8}},
+              React.createElement(Button,{variant:'dark', onClick:()=>nav(`/confirm/${makeCode()}`)}, 'Confirm Appointment'),
+              React.createElement(Button,{variant:'mid', onClick:()=>setStep(3)}, 'Back')
+            )
+          )
+        );
+      }
+
+      function Stepper({current}) {
+        const steps = ['Type','Package','Address','Time','Review'];
+        return React.createElement('div',{style:{display:'flex',gap:12,justifyContent:'center',alignItems:'center',margin:'16px auto 8px',maxWidth:720}},
+          ...steps.map((s,i)=>{
+            const done = i<current, active = i===current;
+            return React.createElement('div',{ key:s, style:{
+              padding:'8px 12px', borderRadius:999, border:'1px solid #e5e5e5',
+              fontSize:14, background: active?'#111':done?'#4d4d4d':'#fff', color:(active||done)?'#fff':'#111'
+            }}, s)
+          })
+        );
+      }
+
+      return React.createElement('div', {style:{paddingBottom:32}},
+        React.createElement(Stepper,{current:step}),
+        step===0 && React.createElement(TypeStep),
+        step===1 && React.createElement(PackageStep),
+        step===2 && React.createElement(AddressStep),
+        step===3 && React.createElement(TimeStep),
+        step===4 && React.createElement(ReviewStep)
+      );
+    }
+
+    function ConfirmPage(){
+      const { pathname } = useLocation();
+      const code = pathname.split('/').pop();
+      return React.createElement(Section,{title:'Appointment Confirmed'},
+        React.createElement('div',{style:{textAlign:'center'}},
+          React.createElement('div',{style:{fontSize:28, marginBottom:8}}, 'Confirmation #'),
+          React.createElement('div',{style:{fontSize:22, marginBottom:16}}, code),
+          React.createElement('div',{style:{color:'#4d4d4d', marginBottom:16, maxWidth:560, marginInline:'auto', lineHeight:1.35}},
+            'A confirmation email with an .ics invite will be sent. It includes a one-tap Reschedule link.'
+          ),
+          React.createElement('div',{style:{display:'flex',justifyContent:'center',gap:12,flexWrap:'wrap',maxWidth:560,margin:'0 auto'}},
+            React.createElement(Button,{variant:'mid', style:{minWidth:260}}, 'Add to Calendar (ICS)'),
+            React.createElement(Button,{variant:'dark', style:{minWidth:260}}, 'Manage Booking')
+          )
+        )
+      );
+    }
+
+    function DownloadPage(){
+      return React.createElement(Section,{title:'Download / Install'},
+        React.createElement('div',{style:{display:'grid',gap:12}},
+          React.createElement('div',null, React.createElement('strong',null,'PWA (Web App): '),
+            'On iPhone Safari: Share → Add to Home Screen. On Android Chrome: ⋮ → Install App.'),
+          React.createElement('div',null, React.createElement('strong',null,'Icon: '), 'Your mountain photo with monogram.'),
+          React.createElement('div',null, React.createElement(Link,{to:'/'}, 'Back to login'))
+        )
+      );
+    }
+
+    function AdminIndex(){
+      return React.createElement(Section,{title:'Admin'},
+        React.createElement('div',{style:{display:'flex',gap:12,flexWrap:'wrap'}},
+          React.createElement(Link,{to:'/admin/today'}, React.createElement(Button,{variant:'dark'}, 'Day Routing Preview')),
+          React.createElement(Link,{to:'/admin/new-booking'}, React.createElement(Button,{variant:'mid'}, 'New Booking'))
+        )
+      );
+    }
+    function AdminToday(){
+      const jobs = [
+        { id:1, at:'09:00', address:'123 Main St, Asheville, NC', pkg:'Silver' },
+        { id:2, at:'12:00', address:'18 Biltmore Ave, Asheville, NC', pkg:'Gold' },
+        { id:3, at:'15:00', address:'1 Page Ave, Asheville, NC', pkg:'Platinum' },
+      ];
+      return React.createElement(Section,{title:'Today • Route Preview'},
+        React.createElement('ol',{style:{margin:0,paddingLeft:20}},
+          ...jobs.map((j,i)=>React.createElement('li',{key:j.id,style:{margin:'12px 0'}},
+            React.createElement('strong',{style:{marginRight:8}}, j.at),' ',
+            `${j.pkg} — ${j.address}`,
+            i<jobs.length-1 ? React.createElement('span',{style:{color:'#4d4d4d'}}, ' • Next leg: ~15–25 min') : null
+          ))
+        )
+      );
+    }
+
+    function App(){
+      return React.createElement(HashRouter,null,
+        React.createElement(AuthProvider,null,
+          React.createElement(NavBar),
+          React.createElement(Routes,null,
+            React.createElement(Route,{ path:'/', element: React.createElement(SplashLogin) }),
+            React.createElement(Route,{ path:'/book', element: React.createElement(BookingFlow) }),
+            React.createElement(Route,{ path:'/confirm/:code', element: React.createElement(ConfirmPage) }),
+            React.createElement(Route,{ path:'/download', element: React.createElement(DownloadPage) }),
+            React.createElement(Route,{ path:'/admin', element: React.createElement(RequireRole,{anyOf:['owner','admin']}, React.createElement(AdminIndex)) }),
+            React.createElement(Route,{ path:'/admin/today', element: React.createElement(RequireRole,{anyOf:['owner','admin']}, React.createElement(AdminToday)) })
+          )
+        )
+      );
+    }
+
+    createRoot(document.getElementById('root')).render(React.createElement(App));
+  </script>
+</body>
 </html>
