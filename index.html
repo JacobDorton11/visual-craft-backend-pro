@@ -11,13 +11,14 @@
     :root { --splash-url: url('/images/splash-bg.jpg'); }
     html, body, #root { height: 100%; margin: 0; }
     body { font-family: Georgia, Times, serif; color:#111; background:#fff; }
-    .diag { position: fixed; top: 6px; left: 6px; font: 12px/1.4 system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; color:#222 }
+    .diag { position: fixed; top: 6px; left: 6px; font: 12px/1.4 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif; color:#222; z-index: 9999; }
     .card { background: rgba(255,255,255,0.55); border: 2px solid rgba(255,255,255,0.2); border-radius: 20px; padding: 24px; box-shadow: 0 10px 30px rgba(0,0,0,0.12); }
     .btn { display:inline-block; border:none; border-radius:12px; padding:14px 22px; min-height:48px; font-size:16px; cursor:pointer }
     .btn-dark { background:#1a1a1a; color:#fff }
     .btn-mid  { background:#4d4d4d; color:#fff }
     .btn-ghost{ background:transparent; color:#1a1a1a; border:2px solid #1a1a1a }
     .pill { position:fixed; bottom:16px; left:50%; transform:translateX(-50%); background:rgba(255,255,255,0.55); padding:10px 18px; border-radius:12px; border:2px solid rgba(255,255,255,0.25); font-size:14px; color:#1a1a1a; text-decoration:none }
+    a { color: inherit; }
   </style>
 </head>
 <body>
@@ -27,16 +28,14 @@
   <!-- React + ReactDOM (UMD) -->
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-  <!-- ✅ The missing piece: React Router DOM UMD -->
-  <script crossorigin src="https://unpkg.com/react-router-dom@6/umd/react-router-dom.production.min.js"></script>
 
   <script>
-    // tiny diagnostic
+    // --- diagnostics (keep visible while we test) ---
     (function(){
       const ok = (x) => x ? 'OK' : 'MISSING';
       const hasReact = !!window.React;
       const hasReactDOM = !!window.ReactDOM;
-      const hasRouter = !!window.ReactRouterDOM;
+      const hasRouter = true; // we'll provide our own router below
       const imgPing = new Image();
       imgPing.onload = () => document.getElementById('diag').textContent =
         `React: ${ok(hasReact)} ReactDOM: ${ok(hasReactDOM)} Router: ${ok(hasRouter)} Image: OK`;
@@ -44,10 +43,84 @@
         `React: ${ok(hasReact)} ReactDOM: ${ok(hasReactDOM)} Router: ${ok(hasRouter)} Image: MISSING`;
       imgPing.src = '/images/splash-bg.jpg';
     })();
+  </script>
 
+  <script>
+    // =========================================================
+    // Minimal Hash Router (no external dependency)
+    // =========================================================
+    const RouterContext = React.createContext(null);
+
+    function parsePath(path) {
+      // normalize leading '#'
+      const p = path || '';
+      return p.startsWith('#') ? p.slice(1) : p;
+    }
+
+    function makeMatcher(pattern) {
+      // patterns like /confirm/:code
+      const keys = [];
+      const rx = new RegExp('^' + pattern.replace(/\/:([^/]+)/g, (_,k)=>{ keys.push(k); return '/([^/]+)'; }) + '$');
+      return (pathname) => {
+        const m = pathname.match(rx);
+        if (!m) return null;
+        const params = {};
+        keys.forEach((k,i)=> params[k] = decodeURIComponent(m[i+1]));
+        return params;
+      };
+    }
+
+    function Router({ routes, children }) {
+      const [pathname, setPathname] = React.useState(()=> parsePath(location.hash) || '/');
+
+      React.useEffect(()=>{
+        const onHash = ()=> setPathname(parsePath(location.hash) || '/');
+        window.addEventListener('hashchange', onHash);
+        if (!location.hash) location.hash = '#/'; // default
+        return ()=> window.removeEventListener('hashchange', onHash);
+      }, []);
+
+      const navigate = React.useCallback((to, { replace=false }={})=>{
+        const hash = to.startsWith('#') ? to : '#'+to;
+        if (replace) location.replace(hash); else location.hash = hash;
+      }, []);
+
+      const match = React.useMemo(()=>{
+        for (const r of routes) {
+          const params = r.matcher(pathname);
+          if (params) return { element: r.element, params };
+        }
+        return { element: React.createElement('div', null, 'Not found'), params:{} };
+      }, [pathname, routes]);
+
+      const ctx = React.useMemo(()=>({ pathname, params: match.params, navigate }), [pathname, match.params, navigate]);
+
+      return React.createElement(RouterContext.Provider, { value: ctx },
+        children ? children : match.element
+      );
+    }
+
+    function useLocation() {
+      return React.useContext(RouterContext);
+    }
+    function useNavigate() {
+      return React.useContext(RouterContext).navigate;
+    }
+    function Link({ to, children, style, className }) {
+      const href = to.startsWith('#') ? to : '#'+to;
+      return React.createElement('a', { href, style, className }, children);
+    }
+    function Navigate({ to, replace }) {
+      const nav = useNavigate();
+      React.useEffect(()=> { nav(to, { replace }); }, [to, replace, nav]);
+      return null;
+    }
+
+    // =========================================================
+    // App code (adapted to use the tiny router above)
+    // =========================================================
     const { useState, useMemo, useEffect, useContext, createContext } = React;
     const { createRoot } = ReactDOM;
-    const { HashRouter, Routes, Route, Link, Navigate, useNavigate, useLocation } = window.ReactRouterDOM;
 
     // ---- Auth / RBAC (owner seeded) ----
     const AuthCtx = createContext(null);
@@ -102,6 +175,13 @@
       );
     }
 
+    function Section({title, children}) {
+      return React.createElement('div',{ style:{ maxWidth:900, margin:'0 auto', padding:'16px 16px 24px'}},
+        React.createElement('h2',{ style:{ fontSize:28, margin:'8px 0 12px'}}, title),
+        React.createElement(Card,{ style:{ background:'#fff', border:'1px solid #e5e5e5'}}, children)
+      );
+    }
+
     function SplashLogin(){
       const { login } = React.useContext(AuthCtx);
       return React.createElement('div',{ style:{
@@ -124,16 +204,9 @@
       );
     }
 
-    function Section({title, children}) {
-      return React.createElement('div',{ style:{ maxWidth:900, margin:'0 auto', padding:'16px 16px 24px'}},
-        React.createElement('h2',{ style:{ fontSize:28, margin:'8px 0 12px'}}, title),
-        React.createElement(Card,{ style:{ background:'#fff', border:'1px solid #e5e5e5'}}, children)
-      );
-    }
-
     function BookingFlow(){
-      const [step,setStep] = useState(0);
-      const [form,setForm] = useState({ listingType:null, pkg:null, place:null, slot:null });
+      const [step,setStep] = React.useState(0);
+      const [form,setForm] = React.useState({ listingType:null, pkg:null, place:null, slot:null });
 
       const listingTypes = [
         { key:'residential', label:'Residential Listing' },
@@ -174,14 +247,13 @@
           )
         );
       }
-      // minimal address step (mock list)
       const mockPlaces = [
         { label: "123 Main St, Asheville, NC", lat: 35.5951, lng: -82.5515 },
         { label: "18 Biltmore Ave, Asheville, NC", lat: 35.5938, lng: -82.5517 },
         { label: "1 Page Ave, Asheville, NC", lat: 35.5959, lng: -82.5553 },
       ];
-      const [q,setQ] = useState("");
-      const results = useMemo(()=> mockPlaces.filter(p => p.label.toLowerCase().includes(q.toLowerCase())), [q]);
+      const [q,setQ] = React.useState("");
+      const results = React.useMemo(()=> mockPlaces.filter(p => p.label.toLowerCase().includes(q.toLowerCase())), [q]);
 
       function AddressStep(){
         return React.createElement(Section,{title:'Property Address'},
@@ -198,7 +270,6 @@
         );
       }
       function TimeStep(){
-        const day = new Date();
         const slots = ['9:00 AM','10:00 AM','11:00 AM','1:00 PM','2:00 PM','3:00 PM'];
         return React.createElement(Section,{title:'Select a Time'},
           React.createElement('div',{style:{display:'grid',gap:12}},
@@ -226,7 +297,7 @@
             React.createElement('div',null, `Address: ${form.place?.label||''}`),
             React.createElement('div',null, `Time: ${form.slot?.label||''}`),
             React.createElement('div',{style:{display:'flex',gap:12,marginTop:8}},
-              React.createElement(Button,{variant:'dark', onClick:()=>nav(`/confirm/${makeCode()}`)}, 'Confirm Appointment'),
+              React.createElement(Button,{variant:'dark', onClick:()=>nav('/confirm/'+makeCode())}, 'Confirm Appointment'),
               React.createElement(Button,{variant:'mid', onClick:()=>setStep(3)}, 'Back')
             )
           )
@@ -279,7 +350,6 @@
         React.createElement('div',{style:{display:'grid',gap:12}},
           React.createElement('div',null, React.createElement('strong',null,'PWA (Web App): '),
             'On iPhone Safari: Share → Add to Home Screen. On Android Chrome: ⋮ → Install App.'),
-          React.createElement('div',null, React.createElement('strong',null,'Icon: '), 'Your mountain photo with monogram.'),
           React.createElement('div',null, React.createElement(Link,{to:'/'}, 'Back to login'))
         )
       );
@@ -310,23 +380,24 @@
       );
     }
 
-    function App(){
-      return React.createElement(HashRouter,null,
-        React.createElement(AuthProvider,null,
-          React.createElement(NavBar),
-          React.createElement(Routes,null,
-            React.createElement(Route,{ path:'/', element: React.createElement(SplashLogin) }),
-            React.createElement(Route,{ path:'/book', element: React.createElement(BookingFlow) }),
-            React.createElement(Route,{ path:'/confirm/:code', element: React.createElement(ConfirmPage) }),
-            React.createElement(Route,{ path:'/download', element: React.createElement(DownloadPage) }),
-            React.createElement(Route,{ path:'/admin', element: React.createElement(RequireRole,{anyOf:['owner','admin']}, React.createElement(AdminIndex)) }),
-            React.createElement(Route,{ path:'/admin/today', element: React.createElement(RequireRole,{anyOf:['owner','admin']}, React.createElement(AdminToday)) })
-          )
-        )
+    // ------------ assemble routes ------------
+    function AppShell(){
+      const routes = [
+        { path: '/',               element: React.createElement(SplashLogin) },
+        { path: '/book',           element: React.createElement(BookingFlow) },
+        { path: '/confirm/:code',  element: React.createElement(ConfirmPage) },
+        { path: '/download',       element: React.createElement(DownloadPage) },
+        { path: '/admin',          element: React.createElement(RequireRole,{anyOf:['owner','admin']}, React.createElement(AdminIndex)) },
+        { path: '/admin/today',    element: React.createElement(RequireRole,{anyOf:['owner','admin']}, React.createElement(AdminToday)) },
+      ].map(r => ({ ...r, matcher: makeMatcher(r.path) }));
+
+      return React.createElement(AuthProvider,null,
+        React.createElement(NavBar),
+        React.createElement(Router,{ routes })
       );
     }
 
-    createRoot(document.getElementById('root')).render(React.createElement(App));
+    createRoot(document.getElementById('root')).render(React.createElement(AppShell));
   </script>
 </body>
 </html>
