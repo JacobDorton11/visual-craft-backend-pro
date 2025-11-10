@@ -1,92 +1,89 @@
-// server.js — ESM version (works on Render)
-// Features:
-// - API: /api/health, /api/availability, /api/book (demo-safe)
-// - Serves SPA from /web (static + SPA fallback)
-// - Binds to process.env.PORT
-
-import express from 'express';
-import cors from 'cors';
-import path from 'path';
-import { fileURLToPath } from 'url';
-
-// ESM __dirname boilerplate
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+// server.js — explicit static mounts + SPA fallback + simple API + diagnostics
+const path = require('path');
+const fs = require('fs');
+const express = require('express');
+const cors = require('cors');
 
 const app = express();
+const PORT = process.env.PORT || 10000;
+const ROOT = process.cwd();
 
-// ---------- Middleware ----------
-app.use(express.json({ limit: '1mb' }));
-app.use(
-  cors({
-    origin:
-      process.env.FRONTEND_BASE_URL ||
-      process.env.PUBLIC_BASE_URL ||
-      '*', // same-origin or allow all (adjust later if you want)
-  })
-);
+app.use(cors());
+app.use(express.json());
 
-// ---------- API (minimal demo endpoints) ----------
+// ---------- Explicit static mounts ----------
+const imgDir = path.join(ROOT, 'images');
+const icoDir = path.join(ROOT, 'icons');
 
-// Health check for sanity
-app.get('/api/health', (req, res) => {
-  res.json({ ok: true, env: process.env.NODE_ENV || 'production' });
+// Serve /images/* from ./images ONLY (cannot be hijacked by SPA)
+app.use('/images', express.static(imgDir, { fallthrough: false, extensions: ['jpg','jpeg','png'] }));
+
+// Serve /icons/* from ./icons (optional)
+app.use('/icons', express.static(icoDir, { fallthrough: true }));
+
+// Serve /manifest.json or /manifest.webmanifest if present
+app.get(['/manifest.json','/manifest.webmanifest'], (req, res) => {
+  const files = ['manifest.json','manifest.webmanifest'];
+  for (const f of files) {
+    const p = path.join(ROOT, f);
+    if (fs.existsSync(p)) return res.sendFile(p);
+  }
+  res.status(404).json({ error: 'manifest not found' });
 });
 
-// Availability (demo): return two slots per day for N days
+// Root static files (index.html, etc.)
+app.use(express.static(ROOT, { extensions: ['html'] }));
+
+// ---------- Minimal API (stubs) ----------
+app.get('/api/health', (req, res) => {
+  res.json({ ok: true, time: new Date().toISOString() });
+});
+
 app.post('/api/availability', (req, res) => {
-  const days = Number(req.body?.days) || 5;
-
-  const slots = [];
   const now = new Date();
-  for (let d = 0; d < days; d++) {
-    const day = new Date(now.getFullYear(), now.getMonth(), now.getDate() + d);
-    [10, 14].forEach((hour) => {
-      const slot = new Date(
-        day.getFullYear(),
-        day.getMonth(),
-        day.getDate(),
-        hour,
-        0,
-        0
-      );
-      slots.push(slot.toISOString());
-    });
+  const base = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 9, 0, 0);
+  const slots = [];
+  for (let i = 0; i < 6; i++) {
+    const d = new Date(base.getTime() + i * 90 * 60000);
+    if (d.getTime() > now.getTime() + 15 * 60000) slots.push(d.toISOString());
   }
-
-  // durationMin informs the client how long the appointment is
   res.json({ slots, durationMin: 60 });
 });
 
-// Book (demo): generate a confirmation code and return it
 app.post('/api/book', (req, res) => {
-  try {
-    const s4 = () => Math.random().toString(36).slice(2, 6).toUpperCase();
-    const y = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-    const code = `VCP-${y}-${s4()}`;
+  const s4 = () => Math.random().toString(36).slice(2, 6).toUpperCase();
+  const ymd = new Date().toISOString().slice(0,10).replace(/-/g,'');
+  res.json({ ok: true, code: `VCP-${ymd}-${s4()}` });
+});
 
-    // In a fuller build, you’d: save to DB, create Google Calendar event,
-    // send email + ICS, etc. For now, just return a code so the flow works.
-    res.json({ ok: true, code });
+// ---------- Diagnostics ----------
+app.get('/__diag', (req,res) => {
+  const hasIndex = fs.existsSync(path.join(ROOT, 'index.html'));
+  const hasImagesDir = fs.existsSync(imgDir);
+  const imgs = hasImagesDir ? fs.readdirSync(imgDir) : [];
+  res.json({
+    ok: true,
+    cwd: ROOT,
+    index_html: hasIndex,
+    images_dir: hasImagesDir,
+    images: imgs
+  });
+});
+
+app.get('/__list/images', (req, res) => {
+  try {
+    const files = fs.readdirSync(imgDir);
+    res.type('text/plain').send(files.join('\n'));
   } catch (e) {
-    console.error('BOOK error', e);
-    res.status(500).json({ ok: false, error: 'Booking failed' });
+    res.status(404).type('text/plain').send('No /images folder found.');
   }
 });
 
-// ---------- Static hosting for the SPA ----------
-
-// Serve everything in /web (don’t auto-index; we do SPA fallback)
-app.use(express.static(path.join(__dirname, 'web'), { index: false }));
-
-// SPA fallback: any non-API route returns index.html
-app.get('*', (req, res, next) => {
-  if (req.path.startsWith('/api/')) return next();
-  res.sendFile(path.join(__dirname, 'web', 'index.html'));
+// ---------- SPA fallback (last; skips /api & our static mounts) ----------
+app.get(/^\/(?!api\/|images\/|icons\/|manifest\.json$|manifest\.webmanifest$).*/, (req, res) => {
+  res.sendFile(path.join(ROOT, 'index.html'));
 });
 
-// ---------- Start server ----------
-const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
   console.log(`VC backend + SPA listening on ${PORT}`);
 });
