@@ -81,21 +81,74 @@
     const useLoc = ()=> React.useContext(RouterContext);
 
     // ===== auth store with localStorage =====
-    const AuthCtx = React.createContext(null);
-    const loadUser = () => {
-      try { return JSON.parse(localStorage.getItem('vc_user')||'null'); } catch { return null; }
+    <script>
+  // … keep all code ABOVE this as-is …
+
+  const AuthCtx = React.createContext(null);
+
+  // unified keys
+  const STORAGE = {
+    USER: 'vc_user',
+    EMAIL_REMEMBER: 'vc_email_remember',
+    PROFILE: 'vc_profile'
+  };
+
+  const readAnyUser = () => {
+    try {
+      const fromLocal = localStorage.getItem(STORAGE.USER);
+      if (fromLocal) return JSON.parse(fromLocal);
+      const fromSession = sessionStorage.getItem(STORAGE.USER);
+      if (fromSession) return JSON.parse(fromSession);
+      return null;
+    } catch { return null; }
+  };
+
+  function AuthProvider({children}) {
+    const [user, setUser] = React.useState(readAnyUser);
+
+    const persistUser = (u, remember) => {
+      setUser(u);
+      const target = remember ? localStorage : sessionStorage;
+      const other  = remember ? sessionStorage : localStorage;
+      target.setItem(STORAGE.USER, JSON.stringify(u));
+      other.removeItem(STORAGE.USER);
     };
-    function AuthProvider({children}) {
-      const [user,setUser] = React.useState(loadUser);
-      const save = (u)=>{ setUser(u); localStorage.setItem('vc_user', JSON.stringify(u)); };
-      const loginEmail = (email, role='client') => save({ id:'u_'+role, email, roles:[role] });
-      const loginOwner = () => save({ id:'u_owner', email:'owner@visualcraft', roles:['owner','admin'] });
-      const loginAdmin = () => save({ id:'u_admin', email:'admin@visualcraft', roles:['admin'] });
-      const logout = ()=>{ setUser(null); localStorage.removeItem('vc_user'); };
-      const hasRole = (r)=> !!user?.roles?.includes(r);
-      return React.createElement(AuthCtx.Provider,{value:{user,loginEmail,loginOwner,loginAdmin,logout,hasRole}},children);
-    }
-    const useAuth = ()=> React.useContext(AuthCtx);
+
+    const loginEmail = (email, role='client', remember=false) => {
+      const u = { id:'u_'+role, email, roles:[role] };
+      persistUser(u, remember);
+      if (remember) localStorage.setItem(STORAGE.EMAIL_REMEMBER, email);
+    };
+
+    const saveProfile = (profileObj) => {
+      try { localStorage.setItem(STORAGE.PROFILE, JSON.stringify(profileObj)); } catch {}
+    };
+    const readProfile = () => {
+      try { return JSON.parse(localStorage.getItem(STORAGE.PROFILE) || 'null'); } catch { return null; }
+    };
+
+    const loginOwner = () => persistUser({ id:'u_owner', email:'owner@visualcraft', roles:['owner','admin'] }, true);
+    const loginAdmin = () => persistUser({ id:'u_admin',  email:'admin@visualcraft', roles:['admin'] }, true);
+
+    const logout = () => {
+      setUser(null);
+      localStorage.removeItem(STORAGE.USER);
+      sessionStorage.removeItem(STORAGE.USER);
+    };
+
+    const hasRole = (r)=> !!user?.roles?.includes(r);
+
+    return React.createElement(
+      AuthCtx.Provider,
+      { value:{ user, loginEmail, loginOwner, loginAdmin, logout, hasRole, saveProfile, readProfile } },
+      children
+    );
+  }
+  const useAuth = ()=> React.useContext(AuthCtx);
+
+  // … keep the rest of the file below, we’ll replace LoginPage/SignupPage next …
+</script>
+
 
     // ===== UI atoms =====
     const Button = ({children, onClick, variant="dark", style, type}) =>
@@ -118,7 +171,9 @@
           user && React.createElement(LinkA,{to:'/book'},'Book'),
           user && React.createElement(LinkA,{to:'/download'},'Download'),
           user && (hasRole('owner')||hasRole('admin')) && React.createElement(LinkA,{to:'/admin'},'Admin'),
-          user && React.createElement('span',null, user.email),
+          const prof = useAuth().readProfile?.() || null;
+user && React.createElement('span', null, prof?.name || user.email),
+
           user ? React.createElement(Button,{variant:'ghost',onClick:logout},'Log out') : null
         )
       );
@@ -144,40 +199,82 @@
       );
     }
 
-    function LoginPage(){
-      const nav = useNav();
-      const { loginEmail } = useAuth();
-      const [email,setEmail] = React.useState('');
-      const [pass,setPass] = React.useState('');
-      const submit = (e)=>{ e.preventDefault(); loginEmail(email.trim()||'client@example.com','client'); nav('/book'); };
-      return React.createElement(Section,{title:'Log in'},
-        React.createElement('form',{onSubmit:submit, style:{display:'grid',gap:12,maxWidth:420}},
-          React.createElement('input',{className:'field', placeholder:'Email', type:'email', value:email, onChange:e=>setEmail(e.target.value)}),
-          React.createElement('input',{className:'field', placeholder:'Password', type:'password', value:pass, onChange:e=>setPass(e.target.value)}),
-          React.createElement(Button,{variant:'dark', type:'submit'},'Continue'),
-          React.createElement('div',null,'No account? ', React.createElement(LinkA,{to:'/signup'},'Create one'))
-        )
-      );
-    }
+    <script>
+  function LoginPage(){
+    const nav = useNav();
+    const { loginEmail } = useAuth();
 
-    function SignupPage(){
-      const nav = useNav();
-      const { loginEmail } = useAuth();
-      const [name,setName] = React.useState('');
-      const [email,setEmail] = React.useState('');
-      const [pass,setPass] = React.useState('');
-      const submit = (e)=>{ e.preventDefault(); // pretend to create account
-        loginEmail(email.trim()||'client@example.com','client'); nav('/book');
-      };
-      return React.createElement(Section,{title:'Create account'},
-        React.createElement('form',{onSubmit:submit, style:{display:'grid',gap:12,maxWidth:420}},
-          React.createElement('input',{className:'field', placeholder:'Full name', value:name, onChange:e=>setName(e.target.value)}),
-          React.createElement('input',{className:'field', placeholder:'Email', type:'email', value:email, onChange:e=>setEmail(e.target.value)}),
-          React.createElement('input',{className:'field', placeholder:'Password', type:'password', value:pass, onChange:e=>setPass(e.target.value)}),
-          React.createElement(Button,{variant:'dark', type:'submit'},'Create account')
-        )
-      );
-    }
+    const remembered = (()=> {
+      try { return localStorage.getItem('vc_email_remember') || ''; } catch { return ''; }
+    })();
+
+    const [email,setEmail] = React.useState(remembered);
+    const [pass,setPass]   = React.useState('');
+    const [keep,setKeep]   = React.useState(!!remembered); // precheck if we remembered an email
+
+    const submit = (e)=>{
+      e.preventDefault();
+      // In a real backend we’d verify password. Here we just create a session.
+      loginEmail(email.trim() || 'client@example.com','client', keep);
+      if (keep) localStorage.setItem('vc_email_remember', email.trim());
+      else      localStorage.removeItem('vc_email_remember');
+      nav('/book');
+    };
+
+    return React.createElement(Section,{title:'Log in'},
+      React.createElement('form',{onSubmit:submit, style:{display:'grid',gap:12,maxWidth:420}},
+        React.createElement('input',{className:'field', placeholder:'Email', type:'email', value:email, onChange:e=>setEmail(e.target.value), required:true}),
+        React.createElement('input',{className:'field', placeholder:'Password', type:'password', value:pass, onChange:e=>setPass(e.target.value), required:true}),
+        React.createElement('label',{style:{display:'flex',gap:8,alignItems:'center'}},
+          React.createElement('input',{type:'checkbox', checked:keep, onChange:()=>setKeep(v=>!v)}),
+          'Keep me signed in'
+        ),
+        React.createElement(Button,{variant:'dark', type:'submit'},'Continue'),
+        React.createElement('div',null,'No account? ', React.createElement(LinkA,{to:'/signup'},'Create one'))
+      )
+    );
+  }
+</script>
+
+
+    <script>
+  function SignupPage(){
+    const nav = useNav();
+    const { loginEmail, saveProfile } = useAuth();
+
+    const [name,setName]   = React.useState('');
+    const [email,setEmail] = React.useState('');
+    const [cell,setCell]   = React.useState('');
+    const [pass,setPass]   = React.useState('');
+    const [keep,setKeep]   = React.useState(true);
+
+    const submit = (e)=>{
+      e.preventDefault();
+
+      // Save basic profile (name, email, cell) safely (no password saved).
+      saveProfile({ name:name.trim(), email:email.trim(), cell:cell.trim() });
+
+      // Create logged-in session as client; keep = persist in localStorage
+      loginEmail(email.trim() || 'client@example.com','client', keep);
+      if (keep) localStorage.setItem('vc_email_remember', email.trim());
+      nav('/book');
+    };
+
+    return React.createElement(Section,{title:'Create account'},
+      React.createElement('form',{onSubmit:submit, style:{display:'grid',gap:12,maxWidth:420}},
+        React.createElement('input',{className:'field', placeholder:'Full name', value:name, onChange:e=>setName(e.target.value), required:true}),
+        React.createElement('input',{className:'field', placeholder:'Email', type:'email', value:email, onChange:e=>setEmail(e.target.value), required:true}),
+        React.createElement('input',{className:'field', placeholder:'Cell number', type:'tel', value:cell, onChange:e=>setCell(e.target.value), required:true}),
+        React.createElement('input',{className:'field', placeholder:'Password', type:'password', value:pass, onChange:e=>setPass(e.target.value), required:true}),
+        React.createElement('label',{style:{display:'flex',gap:8,alignItems:'center'}},
+          React.createElement('input',{type:'checkbox', checked:keep, onChange:()=>setKeep(v=>!v)}),
+          'Keep me signed in'
+        ),
+        React.createElement(Button,{variant:'dark', type:'submit'},'Create account')
+      )
+    );
+  }
+</script>
 
     function RequireRole({anyOf, children}){
       const { user } = useAuth();
