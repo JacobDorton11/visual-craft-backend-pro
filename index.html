@@ -5,7 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Visual Craft Photography</title>
 
-  <!-- PWA bits -->
   <meta name="theme-color" content="#000000" />
   <link rel="manifest" href="/manifest.webmanifest" />
   <link rel="icon" href="/192.png" />
@@ -15,7 +14,8 @@
     :root { --splash-url: url('/images/splash-bg.jpg'); }
     html, body, #root { height: 100%; margin: 0; }
     body { font-family: Georgia, Times, serif; color:#111; background:#fff; }
-    .diag { position: fixed; top: 6px; left: 6px; font: 12px/1.4 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif; color:#222; z-index: 9999; background: rgba(255,255,255,0.8); padding: 4px 8px; border-radius: 6px; border: 1px solid #ddd; }
+    .diag { position: fixed; top: 6px; left: 6px; font: 12px/1.4 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif; color:#222; z-index: 9999; background: rgba(255,255,255,0.9); padding: 4px 8px; border-radius: 6px; border: 1px solid #ddd; }
+    .err  { position: fixed; bottom: 8px; left: 8px; right: 8px; max-height: 40vh; overflow:auto; background:#fff5f5; color:#8a0000; border:1px solid #ffcccc; border-radius:8px; padding:8px 10px; z-index: 9999; font: 12px/1.35 ui-monospace, Menlo, Consolas, monospace; display:none; white-space:pre-wrap }
     .card { background: rgba(255,255,255,0.55); border: 2px solid rgba(255,255,255,0.2); border-radius: 20px; padding: 24px; box-shadow: 0 10px 30px rgba(0,0,0,0.12); }
     .btn { display:inline-block; border:none; border-radius:12px; padding:14px 22px; min-height:48px; font-size:16px; cursor:pointer }
     .btn-dark { background:#1a1a1a; color:#fff }
@@ -34,18 +34,30 @@
   <!-- React + ReactDOM (UMD) -->
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-
-  <!-- OPTIONAL: Real Google Places Autocomplete (fallback works without this) -->
-  <!-- Replace YOUR_GOOGLE_MAPS_KEY to enable real suggestions -->
-  <script async defer src="https://maps.googleapis.com/maps/api/js?key=YOUR_GOOGLE_MAPS_KEY&libraries=places"></script>
 </head>
 <body>
-  <!-- diagnostics: only shown when ?debug=1 -->
   <div class="diag" id="diag" style="display:none">Diagnostics…</div>
   <div id="root"></div>
+  <div class="err" id="err"></div>
 
   <script>
-    // show diagnostics only with ?debug=1
+    // ===== Global error catcher shown on the page =====
+    (function(){
+      const box = document.getElementById('err');
+      function showErr(prefix, msg, stack) {
+        box.style.display = 'block';
+        box.textContent = `${prefix}: ${msg}\n${stack||''}`;
+      }
+      window.addEventListener('error', (e) => {
+        showErr('JS Error', e.message, e.error && e.error.stack);
+      });
+      window.addEventListener('unhandledrejection', (e) => {
+        const reason = e.reason || {};
+        showErr('Promise Rejection', reason.message || String(reason), reason.stack);
+      });
+    })();
+
+    // ===== Diagnostics banner (enable with ?debug=1) =====
     (function(){
       if (!location.search.includes('debug=1')) return;
       const diag = document.getElementById('diag');
@@ -79,65 +91,37 @@
     const useNav = ()=> React.useContext(RouterContext).navigate;
     const useLoc = ()=> React.useContext(RouterContext);
 
-    // ===== auth store with localStorage/sessionStorage =====
+    // ===== Auth (localStorage/sessionStorage) =====
     const AuthCtx = React.createContext(null);
-
-    const STORAGE = {
-      USER: 'vc_user',
-      EMAIL_REMEMBER: 'vc_email_remember',
-      PROFILE: 'vc_profile'
-    };
-
+    const STORAGE = { USER:'vc_user', EMAIL_REMEMBER:'vc_email_remember', PROFILE:'vc_profile' };
     const readAnyUser = () => {
       try {
-        const fromLocal = localStorage.getItem(STORAGE.USER);
-        if (fromLocal) return JSON.parse(fromLocal);
-        const fromSession = sessionStorage.getItem(STORAGE.USER);
-        if (fromSession) return JSON.parse(fromSession);
+        const a = localStorage.getItem(STORAGE.USER); if (a) return JSON.parse(a);
+        const b = sessionStorage.getItem(STORAGE.USER); if (b) return JSON.parse(b);
         return null;
       } catch { return null; }
     };
-
     function AuthProvider({children}) {
       const [user, setUser] = React.useState(readAnyUser);
-
       const persistUser = (u, remember) => {
         setUser(u);
-        const target = remember ? localStorage : sessionStorage;
-        const other  = remember ? sessionStorage : localStorage;
-        target.setItem(STORAGE.USER, JSON.stringify(u));
+        const tgt = remember ? localStorage : sessionStorage;
+        const other = remember ? sessionStorage : localStorage;
+        tgt.setItem(STORAGE.USER, JSON.stringify(u));
         other.removeItem(STORAGE.USER);
       };
-
       const loginEmail = (email, role='client', remember=false) => {
         const u = { id:'u_'+role, email, roles:[role] };
         persistUser(u, remember);
         if (remember) localStorage.setItem(STORAGE.EMAIL_REMEMBER, email);
       };
-
-      const saveProfile = (profileObj) => {
-        try { localStorage.setItem(STORAGE.PROFILE, JSON.stringify(profileObj)); } catch {}
-      };
-      const readProfile = () => {
-        try { return JSON.parse(localStorage.getItem(STORAGE.PROFILE) || 'null'); } catch { return null; }
-      };
-
+      const saveProfile = (obj) => { try { localStorage.setItem(STORAGE.PROFILE, JSON.stringify(obj)); } catch {} };
+      const readProfile = () => { try { return JSON.parse(localStorage.getItem(STORAGE.PROFILE)||'null'); } catch { return null; } };
       const loginOwner = () => persistUser({ id:'u_owner', email:'owner@visualcraft', roles:['owner','admin'] }, true);
       const loginAdmin = () => persistUser({ id:'u_admin',  email:'admin@visualcraft', roles:['admin'] }, true);
-
-      const logout = () => {
-        setUser(null);
-        localStorage.removeItem(STORAGE.USER);
-        sessionStorage.removeItem(STORAGE.USER);
-      };
-
+      const logout = () => { setUser(null); localStorage.removeItem(STORAGE.USER); sessionStorage.removeItem(STORAGE.USER); };
       const hasRole = (r)=> !!user?.roles?.includes(r);
-
-      return React.createElement(
-        AuthCtx.Provider,
-        { value:{ user, loginEmail, loginOwner, loginAdmin, logout, hasRole, saveProfile, readProfile } },
-        children
-      );
+      return React.createElement(AuthCtx.Provider, { value:{ user, loginEmail, loginOwner, loginAdmin, logout, hasRole, saveProfile, readProfile } }, children);
     }
     const useAuth = ()=> React.useContext(AuthCtx);
 
@@ -146,24 +130,18 @@
       React.createElement('button',{onClick, className:`btn ${variant==="dark"?"btn-dark":variant==="mid"?"btn-mid":"btn-ghost"}`, style, type}, children);
     const Card = ({style, children}) => React.createElement('div',{className:'card', style}, children);
     const LinkA = ({to,children}) => React.createElement('a',{href:to.startsWith('#')?to:'#'+to},children);
-
     const Section = ({title, children}) =>
       React.createElement('div',{style:{maxWidth:900, margin:'0 auto', padding:'16px 16px 24px'}},
         React.createElement('h2',{style:{fontSize:28, margin:'8px 0 12px'}}, title),
         React.createElement(Card,{style:{background:'#fff', border:'1px solid #e5e5e5'}}, children)
       );
 
-    // ===== NavBar (fixed) =====
+    // ===== NavBar =====
     function NavBar(){
       const { user, logout, hasRole, readProfile } = useAuth();
       const prof = readProfile?.() || null;
-
       return React.createElement('div',{
-          style:{
-            display:'flex',justifyContent:'space-between',alignItems:'center',
-            padding:'12px 16px',borderBottom:'1px solid #eee',position:'sticky',
-            top:0,background:'#fff',zIndex:10
-          }},
+          style:{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'12px 16px',borderBottom:'1px solid #eee',position:'sticky',top:0,background:'#fff',zIndex:10}},
         React.createElement(LinkA,{to:'/'}, React.createElement('strong',null,'Visual Craft')),
         React.createElement('div',{className:'row',style:{alignItems:'center'}},
           user && React.createElement(LinkA,{to:'/book'},'Book'),
@@ -175,7 +153,7 @@
       );
     }
 
-    // ===== Splash (landing) =====
+    // ===== Pages =====
     function Splash(){
       const nav = useNav();
       const { loginOwner, loginAdmin } = useAuth();
@@ -196,27 +174,14 @@
       );
     }
 
-    // ===== Login / Signup =====
     function LoginPage(){
       const nav = useNav();
       const { loginEmail } = useAuth();
-
-      const remembered = (()=> {
-        try { return localStorage.getItem('vc_email_remember') || ''; } catch { return ''; }
-      })();
-
+      const remembered = (()=>{ try { return localStorage.getItem('vc_email_remember') || ''; } catch { return ''; }})();
       const [email,setEmail] = React.useState(remembered);
       const [pass,setPass]   = React.useState('');
       const [keep,setKeep]   = React.useState(!!remembered);
-
-      const submit = (e)=>{
-        e.preventDefault();
-        loginEmail(email.trim() || 'client@example.com','client', keep);
-        if (keep) localStorage.setItem('vc_email_remember', email.trim());
-        else      localStorage.removeItem('vc_email_remember');
-        nav('/book');
-      };
-
+      const submit = (e)=>{ e.preventDefault(); loginEmail(email.trim() || 'client@example.com','client', keep); if (keep) localStorage.setItem('vc_email_remember', email.trim()); else localStorage.removeItem('vc_email_remember'); nav('/book'); };
       return React.createElement(Section,{title:'Log in'},
         React.createElement('form',{onSubmit:submit, style:{display:'grid',gap:12,maxWidth:420}},
           React.createElement('input',{className:'field', placeholder:'Email', type:'email', value:email, onChange:e=>setEmail(e.target.value), required:true}),
@@ -234,21 +199,12 @@
     function SignupPage(){
       const nav = useNav();
       const { loginEmail, saveProfile } = useAuth();
-
       const [name,setName]   = React.useState('');
       const [email,setEmail] = React.useState('');
       const [cell,setCell]   = React.useState('');
       const [pass,setPass]   = React.useState('');
       const [keep,setKeep]   = React.useState(true);
-
-      const submit = (e)=>{
-        e.preventDefault();
-        saveProfile({ name:name.trim(), email:email.trim(), cell:cell.trim() });
-        loginEmail(email.trim() || 'client@example.com','client', keep);
-        if (keep) localStorage.setItem('vc_email_remember', email.trim());
-        nav('/book');
-      };
-
+      const submit = (e)=>{ e.preventDefault(); saveProfile({ name:name.trim(), email:email.trim(), cell:cell.trim() }); loginEmail(email.trim() || 'client@example.com','client', keep); if (keep) localStorage.setItem('vc_email_remember', email.trim()); nav('/book'); };
       return React.createElement(Section,{title:'Create account'},
         React.createElement('form',{onSubmit:submit, style:{display:'grid',gap:12,maxWidth:420}},
           React.createElement('input',{className:'field', placeholder:'Full name', value:name, onChange:e=>setName(e.target.value), required:true}),
@@ -264,9 +220,7 @@
       );
     }
 
-    // ==== Booking (with your images + address autocomplete fallback) ====
     function BookingFlow(){
-      const nav = useNav();
       const [step,setStep] = React.useState(0);
       const [form,setForm] = React.useState({ listingType:null, pkg:null, place:null, slot:null });
       const listingTypes = [
@@ -316,16 +270,8 @@
         const [q,setQ] = React.useState(''); const [sugs,setSugs] = React.useState([]);
         React.useEffect(()=>{
           if (!q) { setSugs([]); return; }
-          const hasGoogle = !!(window.google && google.maps?.places);
-          if (hasGoogle) {
-            const svc = new google.maps.places.AutocompleteService();
-            svc.getPlacePredictions({ input:q, componentRestrictions:{ country:['us'] } }, (preds, status)=>{
-              if (status !== google.maps.places.PlacesServiceStatus.OK || !preds) { setSugs([]); return; }
-              setSugs(preds.map(p=>p.description));
-            });
-          } else {
-            const low = q.toLowerCase(); setSugs(fallbackPlaces.filter(x=>x.toLowerCase().includes(low)).slice(0,5));
-          }
+          // Fallback suggestions only (no external API).
+          const low = q.toLowerCase(); setSugs(fallbackPlaces.filter(x=>x.toLowerCase().includes(low)).slice(0,5));
         },[q]);
         return React.createElement(Section,{title:'Property Address'},
           React.createElement('div',{style:{display:'grid',gap:12}},
@@ -369,8 +315,7 @@
         return React.createElement('div',{className:'row',style:{justifyContent:'center',margin:'16px auto 8px',maxWidth:720}},
           ...steps.map((s,i)=>React.createElement('div',{key:s,style:{
             padding:'8px 12px',borderRadius:999,border:'1px solid #e5e5e5',
-            fontSize:14, background:i===current?'#111':i<current?'#4d4d4d':'#fff', color:i<=current?'#fff':'#111'
-          }},s))
+            fontSize:14, background:i===current?'#111':i<current?'#4d4d4d':'#fff', color:i<=current?'#fff':'#111'}},s))
         );
       };
       return React.createElement('div',null,
@@ -399,32 +344,12 @@
       );
     }
 
-    // PWA install capture
-    let deferredPrompt = null;
-    window.addEventListener('beforeinstallprompt', (e)=>{ e.preventDefault(); deferredPrompt = e; });
-
     function DownloadPage(){
-      const [canInstall,setCanInstall] = React.useState(!!deferredPrompt);
-      React.useEffect(()=>{
-        const h = ()=> setCanInstall(!!deferredPrompt);
-        window.addEventListener('beforeinstallprompt', h);
-        return ()=> window.removeEventListener('beforeinstallprompt', h);
-      },[]);
-      const doInstall = async ()=>{
-        if (!deferredPrompt) return;
-        deferredPrompt.prompt();
-        await deferredPrompt.userChoice;
-        deferredPrompt = null; setCanInstall(false);
-      };
       return React.createElement(Section,{title:'Download / Install'},
-        React.createElement('div',{style:{display:'grid',gap:12}},
-          canInstall
-            ? React.createElement(Button,{variant:'dark',onClick:doInstall},'Install app')
-            : React.createElement('div',null,
-                React.createElement('p',null,'On iPhone/iPad (Safari): Share → Add to Home Screen.'),
-                React.createElement('p',null,'On Android (Chrome): ⋮ → Install App.'),
-                React.createElement('p',null,'On Desktop (Chrome/Edge): look for the Install icon in the address bar.')
-              ),
+        React.createElement('div',null,
+          React.createElement('p',null,'On iPhone/iPad (Safari): Share → Add to Home Screen.'),
+          React.createElement('p',null,'On Android (Chrome): ⋮ → Install App.'),
+          React.createElement('p',null,'On Desktop (Chrome/Edge): look for the Install icon in the address bar.'),
           React.createElement('div',null, React.createElement(LinkA,{to:'/'}, 'Back to login'))
         )
       );
@@ -455,35 +380,6 @@
       );
     }
 
-    // ===== Root app & routes =====
-    function App(){
-      const routes = [
-        { path:'/',              element:()=>React.createElement(AuthProvider,null, React.createElement(AppShell)) },
-      ].map(r=>({...r,matcher:makeMatcher(r.path)}));
-      return React.createElement(Router,{routes});
-    }
-
-    function AppShell(){
-      const { user, hasRole } = useAuth();
-      const loc = useLoc();
-      const path = loc.path;
-      const routeEl = (()=> {
-        if (path === '/' ) return React.createElement(Splash);
-        if (path === '/login') return React.createElement(LoginPage);
-        if (path === '/signup') return React.createElement(SignupPage);
-        if (path === '/book')  return user ? React.createElement(BookingFlow) : React.createElement(LoginPage);
-        if (path.startsWith('/confirm/')) return React.createElement(ConfirmPage, { code: path.split('/').pop() });
-        if (path === '/download') return React.createElement(DownloadPage);
-        if (path === '/admin') return React.createElement(RequireRole,{anyOf:['owner','admin']}, React.createElement(AdminHome));
-        if (path === '/admin/today') return React.createElement(RequireRole,{anyOf:['owner','admin']}, React.createElement(AdminToday));
-        return React.createElement('div',null,'Not found');
-      })();
-      return React.createElement(React.Fragment,null,
-        React.createElement(NavBar),
-        routeEl
-      );
-    }
-
     function RequireRole({anyOf, children}){
       const { user } = useAuth();
       const nav = useNav();
@@ -496,6 +392,31 @@
       return children;
     }
 
+    // ===== Root app & routes =====
+    function AppShell(){
+      const { user } = useAuth();
+      const { path } = useLoc();
+      const routeEl = (()=> {
+        if (path === '/' ) return React.createElement(Splash);
+        if (path === '/login') return React.createElement(LoginPage);
+        if (path === '/signup') return React.createElement(SignupPage);
+        if (path === '/book')  return user ? React.createElement(BookingFlow) : React.createElement(LoginPage);
+        if (path.startsWith('/confirm/')) return React.createElement(ConfirmPage, { code: path.split('/').pop() });
+        if (path === '/download') return React.createElement(DownloadPage);
+        if (path === '/admin') return React.createElement(RequireRole,{anyOf:['owner','admin']}, React.createElement(AdminHome));
+        if (path === '/admin/today') return React.createElement(RequireRole,{anyOf:['owner','admin']}, React.createElement(AdminToday));
+        return React.createElement('div',null,'Not found');
+      })();
+      return React.createElement(React.Fragment,null, React.createElement(NavBar), routeEl);
+    }
+    function App(){
+      const routes = [
+        { path:'/', element:()=>React.createElement(AuthProvider,null, React.createElement(AppShell)) },
+      ].map(r=>({...r,matcher:makeMatcher(r.path)}));
+      return React.createElement(Router,{routes});
+    }
+
+    // Mount app
     ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App));
   </script>
 </body>
